@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Inter', sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+.storage-bar {
+  @apply h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden;
+}
+
+.storage-bar-fill {
+  @apply h-full rounded-full bg-blue-500 transition-all duration-300;
+}
+
+.file-item:hover {
+  @apply bg-gray-50 dark:bg-gray-800;
+}
+
+.file-item.selected {
+  @apply bg-blue-50 dark:bg-blue-900/30;
+}
+
+.btn-primary {
+  @apply px-3 py-1.5 md:px-4 md:py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700 transition-colors flex items-center gap-1.5 md:gap-2 text-xs md:text-sm;
+}
+
+.btn-secondary {
+  @apply px-3 py-1.5 md:px-4 md:py-2 border border-gray-300 dark:border-gray-600 rounded-full font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-1.5 md:gap-2 text-xs md:text-sm;
+}
+
+.context-menu-item {
+  @apply px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3;
+}
+
+@media (max-width: 767px) {
+  #file-info-panel {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    z-index: 45;
+    border-left: none;
+    background: var(--color-white, #fff);
+  }
+
+  :is(.dark) #file-info-panel {
+    background: var(--color-gray-900, #111827);
+  }
+
+  #preview-modal video,
+  #preview-modal img {
+    max-width: 95vw;
+    max-height: 85vh;
+  }
+
+  #upload-queue-panel {
+    width: calc(100vw - 2rem);
+    max-width: 100%;
+  }
+}

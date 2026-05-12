@@ -1,0 +1,18 @@
+services:
+  udrive:
+    build: .
+    container_name: udrive
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - udrive-db:/app/server/db
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+
+volumes:
+  udrive-db:

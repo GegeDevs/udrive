@@ -1,0 +1,10 @@
+node_modules
+dist
+server/db/*.db
+server/db/*.db-wal
+server/db/*.db-shm
+.env
+.claude
+.git
+.gitignore
+README.md

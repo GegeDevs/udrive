@@ -1,0 +1,26 @@
+{
+  "name": "udrive",
+  "version": "1.0.0",
+  "description": "Unified Google Drive manager - pool multiple free accounts into one",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"node server/index.js\" \"vite\"",
+    "build": "vite build",
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "googleapis": "^144.0.0",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.7",
+    "concurrently": "^9.1.2",
+    "tailwindcss": "^4.1.7",
+    "vite": "^6.3.5"
+  }
+}
