@@ -1,4 +1,8 @@
-import { randomBytes } from 'node:crypto';
+function generateToken() {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 const ALL_PERMISSIONS = [
   'drive:upload', 'drive:download', 'drive:delete', 'drive:rename',
@@ -66,7 +70,7 @@ export function requirePermission(c, user, perm) {
 }
 
 export async function createSession(db, userId) {
-  const token = randomBytes(32).toString('hex');
+  const token = generateToken();
   const user = await db.prepare('SELECT session_timeout_hours, role FROM users WHERE id = ?').bind(userId).first();
 
   let expiresAt;
