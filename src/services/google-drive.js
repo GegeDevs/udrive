@@ -142,12 +142,22 @@ export async function copyFile(env, db, accountId, fileId, destinationId) {
 
 export async function getStorageQuota(env, db, accountId) {
   const headers = await getAuthHeaders(env, db, accountId);
-  const res = await fetch(`${DRIVE_API.replace('/drive/v3', '/drive/v3')}/about?fields=storageQuota`, { headers });
+  const res = await fetch(`${DRIVE_API}/about?fields=storageQuota`, { headers });
   if (!res.ok) throw new Error('Quota fetch failed');
   const data = await res.json();
+
+  // Count files owned by this account
+  const countRes = await fetch(`${DRIVE_API}/files?q=${encodeURIComponent("'me' in owners and trashed = false")}&fields=files(id)&pageSize=1000`, { headers });
+  let fileCount = 0;
+  if (countRes.ok) {
+    const countData = await countRes.json();
+    fileCount = countData.files?.length || 0;
+  }
+
   return {
     limit: parseInt(data.storageQuota.limit || '16106127360'),
-    used: parseInt(data.storageQuota.usage || '0')
+    used: parseInt(data.storageQuota.usage || '0'),
+    fileCount
   };
 }
 

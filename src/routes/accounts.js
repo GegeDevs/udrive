@@ -151,7 +151,7 @@ accounts.get('/', async (c) => {
     }
   }
 
-  const { results } = await db.prepare('SELECT id, email, display_name, is_primary, storage_limit, storage_used, card_color, created_at FROM accounts ORDER BY is_primary DESC, created_at ASC').all();
+  const { results } = await db.prepare('SELECT id, email, display_name, is_primary, storage_limit, storage_used, file_count, card_color, created_at FROM accounts ORDER BY is_primary DESC, created_at ASC').all();
 
   const canViewEmail = user.role === 'master' || user.permissions.includes('accounts:view_email');
   const filtered = results.map(acc => {
@@ -220,8 +220,8 @@ accounts.get('/:id/storage', async (c) => {
   const db = c.get("db");
   const id = c.req.param('id');
   const quota = await getStorageQuota(c.env, db, parseInt(id));
-  await db.prepare("UPDATE accounts SET storage_limit = ?, storage_used = ?, updated_at = datetime('now') WHERE id = ?")
-    .bind(quota.limit, quota.used, id).run();
+  await db.prepare("UPDATE accounts SET storage_limit = ?, storage_used = ?, file_count = ?, updated_at = datetime('now') WHERE id = ?")
+    .bind(quota.limit, quota.used, quota.fileCount, id).run();
   return c.json(quota);
 });
 

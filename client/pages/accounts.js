@@ -359,7 +359,7 @@ async function loadAccounts() {
               </div>
             </div>
             <div class="mb-3">
-              ${renderStorageBar(acc.storage_used, acc.storage_limit)}
+              ${renderStorageBar(acc.storage_used, acc.storage_limit, acc.file_count)}
             </div>
             <div class="flex items-center gap-2 mt-auto">
               ${!acc.is_primary ? `

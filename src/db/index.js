@@ -84,6 +84,7 @@ export async function initDB(db) {
   // Migrations for existing databases
   try { db.prepare('SELECT card_color FROM accounts LIMIT 0').all(); } catch { db.exec("ALTER TABLE accounts ADD COLUMN card_color TEXT DEFAULT ''"); }
   try { db.prepare('SELECT session_timeout_hours FROM users LIMIT 0').all(); } catch { db.exec("ALTER TABLE users ADD COLUMN session_timeout_hours INTEGER DEFAULT 24"); }
+  try { db.prepare('SELECT file_count FROM accounts LIMIT 0').all(); } catch { db.exec("ALTER TABLE accounts ADD COLUMN file_count INTEGER DEFAULT 0"); }
 
   // Migrate old permission format to new
   migratePermissions(db);
