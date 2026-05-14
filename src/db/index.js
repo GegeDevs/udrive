@@ -20,6 +20,7 @@ export async function initDB(db) {
       is_primary INTEGER DEFAULT 0,
       storage_limit INTEGER DEFAULT 16106127360,
       storage_used INTEGER DEFAULT 0,
+      file_count INTEGER DEFAULT 0,
       card_color TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -82,9 +83,9 @@ export async function initDB(db) {
   `);
 
   // Migrations for existing databases
-  try { db.prepare('SELECT card_color FROM accounts LIMIT 0').all(); } catch { db.exec("ALTER TABLE accounts ADD COLUMN card_color TEXT DEFAULT ''"); }
-  try { db.prepare('SELECT session_timeout_hours FROM users LIMIT 0').all(); } catch { db.exec("ALTER TABLE users ADD COLUMN session_timeout_hours INTEGER DEFAULT 24"); }
-  try { db.prepare('SELECT file_count FROM accounts LIMIT 0').all(); } catch { db.exec("ALTER TABLE accounts ADD COLUMN file_count INTEGER DEFAULT 0"); }
+  try { await db.prepare('SELECT card_color FROM accounts LIMIT 0').all(); } catch { db.exec("ALTER TABLE accounts ADD COLUMN card_color TEXT DEFAULT ''"); }
+  try { await db.prepare('SELECT session_timeout_hours FROM users LIMIT 0').all(); } catch { db.exec("ALTER TABLE users ADD COLUMN session_timeout_hours INTEGER DEFAULT 24"); }
+  try { await db.prepare('SELECT file_count FROM accounts LIMIT 0').all(); } catch { db.exec("ALTER TABLE accounts ADD COLUMN file_count INTEGER DEFAULT 0"); }
 
   // Migrate old permission format to new
   migratePermissions(db);
