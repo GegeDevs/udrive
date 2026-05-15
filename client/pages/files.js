@@ -3,11 +3,10 @@ import { getQueryParams } from '../router.js';
 import { renderBreadcrumb } from '../components/breadcrumb.js';
 import { showContextMenu, hideContextMenu } from '../components/context-menu.js';
 import { showToast } from '../components/toast.js';
-import { addToUploadQueue, onUploadComplete } from '../components/upload-queue.js';
+import { addToUploadQueue, onUploadComplete, downloadBackground, downloadViaBrowser } from '../components/transfer-panel.js';
 import { renderSidebar } from '../components/sidebar.js';
 import { hasPermission } from '../auth-state.js';
 import { formatDate } from '../time-utils.js';
-import { downloadBackground, downloadViaBrowser } from '../components/download-queue.js';
 
 let folderStack = [];
 let currentFiles = [];

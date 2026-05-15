@@ -12,6 +12,7 @@ import { renderSetupPage } from './pages/setup.js';
 import { renderUsersPage } from './pages/users.js';
 import { renderActivityPage } from './pages/activity.js';
 import { renderLogsPage } from './pages/logs.js';
+import { renderTransferPage } from './pages/transfer.js';
 import { showLogoutModal } from './components/logout-modal.js';
 import { api } from './api.js';
 import { setCurrentUser, hasPermission, hasPageAccess, getCurrentUser } from './auth-state.js';
@@ -84,6 +85,9 @@ async function initApp() {
     registerRoute('/logs', () => {
       if (getCurrentUser()?.role !== 'master') { navigate('/'); return; }
       renderLogsPage();
+    });
+    registerRoute('/transfer', () => {
+      renderTransferPage();
     });
     registerRoute('/login', renderLoginPage);
 

@@ -1,6 +1,25 @@
 let queue = [];
 let isMinimized = false;
 let panelEl = null;
+let onChangeCallback = null;
+let panelRendered = false;
+
+export function onUploadChange(cb) {
+  onChangeCallback = cb;
+}
+
+export function getUploadState() {
+  return {
+    active: queue.filter(i => i.status === 'uploading').length,
+    waiting: queue.filter(i => i.status === 'waiting').length,
+    completed: queue.filter(i => i.status === 'done').length,
+    total: queue.length
+  };
+}
+
+function notifyChange() {
+  if (onChangeCallback) onChangeCallback(getUploadState());
+}
 
 export function addToUploadQueue(file, folderId) {
   const item = {
@@ -12,7 +31,8 @@ export function addToUploadQueue(file, folderId) {
     error: null
   };
   queue.push(item);
-  renderPanel();
+  renderPanel(true);
+  notifyChange();
   processQueue();
   return item;
 }
@@ -28,7 +48,8 @@ async function processQueue() {
     if (!item) break;
 
     item.status = 'uploading';
-    renderPanel();
+    renderPanel(true);
+    notifyChange();
 
     try {
       await uploadWithProgress(item);
@@ -38,19 +59,14 @@ async function processQueue() {
       item.status = 'failed';
       item.error = err.message;
     }
-    renderPanel();
+    renderPanel(true);
+    notifyChange();
   }
 
   processing = false;
 
-  // Auto-hide after 3s if all done
-  const allDone = queue.every(i => i.status === 'done' || i.status === 'failed');
-  if (allDone && queue.length > 0) {
-    setTimeout(() => {
-      if (queue.every(i => i.status === 'done' || i.status === 'failed')) {
-        // Keep panel visible but don't auto-close
-      }
-    }, 3000);
+  if (uploadCompleteCallback && queue.every(i => i.status === 'done' || i.status === 'failed')) {
+    uploadCompleteCallback();
   }
 }
 
@@ -64,7 +80,7 @@ async function uploadWithProgress(item) {
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) {
         item.progress = Math.round((e.loaded / e.total) * 100);
-        renderPanel();
+        updateItemProgress(item);
       }
     });
 
@@ -95,7 +111,19 @@ export function onUploadComplete(callback) {
 
 let uploadCompleteCallback = null;
 
-function renderPanel() {
+function updateItemProgress(item) {
+  if (!panelEl || isMinimized) return;
+  const progressBar = panelEl.querySelector(`[data-upload-progress="${item.id}"]`);
+  if (progressBar) progressBar.style.width = `${item.progress}%`;
+
+  const headerEl = panelEl.querySelector('#upload-header-text');
+  if (headerEl) {
+    const completedCount = queue.filter(i => i.status === 'done').length;
+    headerEl.textContent = `Uploading ${completedCount + 1} of ${queue.length}`;
+  }
+}
+
+function renderPanel(full = false) {
   if (queue.length === 0) return;
 
   if (!panelEl) {
@@ -103,7 +131,10 @@ function renderPanel() {
     panelEl.id = 'upload-queue-panel';
     panelEl.className = 'fixed bottom-4 right-4 z-40 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden flex flex-col';
     document.body.appendChild(panelEl);
+    panelRendered = false;
   }
+
+  if (!full && panelRendered) return;
 
   const completedCount = queue.filter(i => i.status === 'done').length;
   const totalCount = queue.length;
@@ -115,18 +146,14 @@ function renderPanel() {
     headerText = failedCount > 0
       ? `${completedCount} uploaded, ${failedCount} failed`
       : `${completedCount} upload${completedCount > 1 ? 's' : ''} complete`;
-    if (uploadCompleteCallback) {
-      uploadCompleteCallback();
-    }
   } else {
-    const uploading = queue.find(i => i.status === 'uploading');
     headerText = `Uploading ${completedCount + 1} of ${totalCount}`;
   }
 
   panelEl.innerHTML = `
-    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 cursor-pointer select-none" id="upload-panel-header">
-      <span class="text-sm font-medium">${headerText}</span>
-      <div class="flex items-center gap-1">
+    <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700 select-none">
+      <span id="upload-header-text" class="text-sm font-medium">${headerText}</span>
+      <div class="flex items-center">
         <button id="upload-panel-toggle" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
           <span class="material-icons-outlined text-base">${isMinimized ? 'expand_less' : 'expand_more'}</span>
         </button>
@@ -142,15 +169,12 @@ function renderPanel() {
     `}
   `;
 
+  panelRendered = true;
+
   panelEl.querySelector('#upload-panel-toggle').addEventListener('click', (e) => {
     e.stopPropagation();
     isMinimized = !isMinimized;
-    renderPanel();
-  });
-
-  panelEl.querySelector('#upload-panel-header').addEventListener('click', () => {
-    isMinimized = !isMinimized;
-    renderPanel();
+    renderPanel(true);
   });
 
   panelEl.querySelector('#upload-panel-close').addEventListener('click', (e) => {
@@ -189,7 +213,7 @@ function renderQueueItem(item) {
         <p class="text-xs font-medium truncate">${escapeHtml(item.file.name)}</p>
         ${item.status === 'uploading' ? `
           <div class="mt-1 h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-            <div class="h-full rounded-full bg-blue-500 transition-all duration-200" style="width: ${item.progress}%"></div>
+            <div data-upload-progress="${item.id}" class="h-full rounded-full bg-blue-500 transition-all duration-300" style="width: ${item.progress}%"></div>
           </div>
         ` : ''}
         ${item.status === 'failed' ? `<p class="text-xs text-red-500 mt-0.5 truncate">${escapeHtml(item.error)}</p>` : ''}
@@ -204,7 +228,9 @@ function closePanel() {
   if (panelEl) {
     panelEl.remove();
     panelEl = null;
+    panelRendered = false;
   }
+  notifyChange();
 }
 
 function formatSize(bytes) {

@@ -11,6 +11,7 @@ Unified Google Drive Manager — pool multiple free Google Drive accounts (15GB 
 ## Features
 
 - **Unified File Manager** — Browse, upload, download, create folders, rename, delete, move, copy files across multiple Google Drive accounts
+- **Dual Download Mode** — Download via Browser (Download Manager with expiry link) or Background (floating progress panel)
 - **Auto Storage Distribution** — Automatically selects the account with most available space when uploading
 - **Multi-Account Management** — Add accounts via OAuth or import from rclone config, export to rclone format
 - **Shared Folder Concept** — One primary account shares a folder with all others; all operations happen within this shared space
@@ -134,9 +135,9 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/auth/callback
 - Permissions grouped per page (Drive, Trash, Accounts, Settings)
 - Page hidden if no permissions in that group
 - Granular actions per page:
-  - **Drive:** upload, download, delete, rename, create folder, move, copy, preview
+  - **Drive:** view files, upload, download (browser), download (background), delete, rename, create folder, move, copy, preview, view uploader
   - **Trash:** view, restore, permanent delete, empty trash
-  - **Accounts:** view, add, remove, set primary, refresh, import/export, color
+  - **Accounts:** view, view email, add, remove, set primary, refresh, import/export, color
   - **Settings:** view, edit, keep-alive, database
 - Configurable session timeout
 

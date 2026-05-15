@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { renderStorageBar } from './storage-bar.js';
 import { getCurrentUser, hasPageAccess } from '../auth-state.js';
+import { getTransferState, onTransferChange } from './transfer-panel.js';
 
 export async function renderSidebar() {
   const sidebar = document.getElementById('sidebar');
@@ -29,6 +30,7 @@ export function updateSidebarContent(sidebar, totalUsed, totalLimit, collapsed) 
 
   const navItems = [];
   if (hasPageAccess('drive')) navItems.push({ path: '/', icon: 'folder', label: 'My Drive' });
+  navItems.push({ path: '/transfer', icon: 'swap_vert', label: 'Transfers' });
   if (hasPageAccess('trash')) navItems.push({ path: '/trash', icon: 'delete', label: 'Trash' });
   if (hasPageAccess('accounts')) navItems.push({ path: '/accounts', icon: 'people', label: 'Accounts' });
   if (hasPageAccess('settings')) navItems.push({ path: '/settings', icon: 'settings', label: 'Settings' });
@@ -52,6 +54,7 @@ export function updateSidebarContent(sidebar, totalUsed, totalLimit, collapsed) 
         `).join('')}
       </nav>
       <div class="py-3 flex flex-col items-center gap-2">
+        <div id="sidebar-transfers-collapsed" class="hidden"></div>
         <div title="${(totalUsed / (1024 ** 3)).toFixed(1)} / ${(totalLimit / (1024 ** 3)).toFixed(0)} GB">
           <svg width="36" height="36" class="transform -rotate-90">
             <circle cx="18" cy="18" r="${radius}" fill="none" stroke-width="4" class="stroke-gray-200 dark:stroke-gray-700"></circle>
@@ -72,13 +75,80 @@ export function updateSidebarContent(sidebar, totalUsed, totalLimit, collapsed) 
         `).join('')}
       </nav>
       <div class="p-4 border-t border-gray-200 dark:border-gray-700">
+        <div id="sidebar-transfers" class="hidden mb-3"></div>
         <p class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Storage</p>
         ${renderStorageBar(totalUsed, totalLimit)}
       </div>
     `;
   }
 
+  initTransferMonitor();
   updateActiveLink();
+}
+
+function initTransferMonitor() {
+  onTransferChange(() => updateTransferPanel());
+  updateTransferPanel();
+}
+
+function updateTransferPanel() {
+  const el = document.getElementById('sidebar-transfers');
+  const elCollapsed = document.getElementById('sidebar-transfers-collapsed');
+
+  const state = getTransferState();
+  const hasActivity = state.uploads.total > 0 || state.downloads.total > 0;
+
+  // Expanded sidebar
+  if (el) {
+    if (!hasActivity) {
+      el.classList.add('hidden');
+      el.innerHTML = '';
+    } else {
+      el.classList.remove('hidden');
+      let html = '';
+      if (state.uploads.total > 0) {
+        const active = state.uploads.active + state.uploads.waiting;
+        html += `
+          <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 mb-1">
+            <span class="material-icons-outlined text-sm text-blue-500">upload</span>
+            <span>${active > 0 ? `Uploading ${state.uploads.completed}/${state.uploads.total}` : `${state.uploads.completed} uploaded`}</span>
+            ${active > 0 ? '<span class="animate-pulse text-blue-500">●</span>' : ''}
+          </div>
+        `;
+      }
+      if (state.downloads.total > 0) {
+        const active = state.downloads.active;
+        html += `
+          <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 mb-1">
+            <span class="material-icons-outlined text-sm text-green-500">download</span>
+            <span>${active > 0 ? `Downloading ${state.downloads.completed}/${state.downloads.total}` : `${state.downloads.completed} downloaded`}</span>
+            ${active > 0 ? '<span class="animate-pulse text-green-500">●</span>' : ''}
+          </div>
+        `;
+      }
+      el.innerHTML = html;
+    }
+  }
+
+  // Collapsed sidebar
+  if (elCollapsed) {
+    if (!hasActivity) {
+      elCollapsed.classList.add('hidden');
+      elCollapsed.innerHTML = '';
+    } else {
+      elCollapsed.classList.remove('hidden');
+      let html = '';
+      const uploadActive = state.uploads.active + state.uploads.waiting;
+      const downloadActive = state.downloads.active;
+      if (uploadActive > 0) {
+        html += `<span class="material-icons-outlined text-lg text-blue-500 animate-pulse" title="Uploading ${state.uploads.completed}/${state.uploads.total}">upload</span>`;
+      }
+      if (downloadActive > 0) {
+        html += `<span class="material-icons-outlined text-lg text-green-500 animate-pulse" title="Downloading ${state.downloads.completed}/${state.downloads.total}">download</span>`;
+      }
+      elCollapsed.innerHTML = html;
+    }
+  }
 }
 
 function updateActiveLink() {
