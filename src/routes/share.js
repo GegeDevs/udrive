@@ -13,6 +13,44 @@ function generateShareId() {
   return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function generateCsrfToken() {
+  const array = new Uint8Array(16);
+  crypto.getRandomValues(array);
+  return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyTurnstile(secretKey, token, ip) {
+  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ secret: secretKey, response: token, remoteip: ip || '' })
+  });
+  const data = await res.json();
+  return data.success === true;
+}
+
+async function checkUploadRateLimit(db, ip) {
+  const rateSetting = await db.prepare("SELECT value FROM settings WHERE key = 'share_rate_limit_per_hour'").first();
+  const limit = parseInt(rateSetting?.value) || 10;
+  const now = Math.floor(Date.now() / 3600000); // current hour window
+  const key = `share_ip:${ip}`;
+
+  const row = await db.prepare('SELECT request_count FROM api_rate_limits WHERE key_hash = ? AND window_start = ?')
+    .bind(key, now).first();
+
+  if (row && row.request_count >= limit) return false;
+
+  if (row) {
+    await db.prepare('UPDATE api_rate_limits SET request_count = request_count + 1 WHERE key_hash = ? AND window_start = ?')
+      .bind(key, now).run();
+  } else {
+    await db.prepare('INSERT INTO api_rate_limits (key_hash, window_start, request_count) VALUES (?, ?, 1)')
+      .bind(key, now).run();
+    await db.prepare('DELETE FROM api_rate_limits WHERE key_hash LIKE ? AND window_start < ?').bind('share_ip:%', now - 2).run();
+  }
+  return true;
+}
+
 async function getShareSettings(db) {
   const keys = ['share_enabled', 'share_folder_id', 'share_default_expiry_days', 'share_max_expiry_days', 'share_max_file_size_mb', 'share_cleanup_interval_minutes'];
   const settings = {};
@@ -32,11 +70,21 @@ sharePublic.get('/info', async (c) => {
   if (settings.share_enabled !== '1') {
     return c.json({ enabled: false });
   }
+
+  // Generate CSRF token
+  const csrfToken = generateCsrfToken();
+  const expiresAt = new Date(Date.now() + 3600000).toISOString().replace('T', ' ').slice(0, 19);
+  await db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").bind(`csrf:${csrfToken}`, expiresAt).run();
+  // Cleanup old CSRF tokens
+  await db.prepare("DELETE FROM settings WHERE key LIKE 'csrf:%' AND value < datetime('now')").run();
+
   return c.json({
     enabled: true,
     maxFileSizeMb: parseInt(settings.share_max_file_size_mb) || 100,
     defaultExpiryDays: parseInt(settings.share_default_expiry_days) || 7,
-    maxExpiryDays: parseInt(settings.share_max_expiry_days) || 30
+    maxExpiryDays: parseInt(settings.share_max_expiry_days) || 30,
+    csrfToken,
+    turnstileSiteKey: c.env.TURNSTILE_SITE_KEY || ''
   });
 });
 
@@ -52,6 +100,30 @@ sharePublic.post('/upload', async (c) => {
   }
 
   const formData = await c.req.formData();
+
+  // CSRF validation
+  const csrfToken = formData.get('csrf_token');
+  if (!csrfToken) return c.json({ error: 'Invalid request' }, 403);
+  const csrfRow = await db.prepare("SELECT value FROM settings WHERE key = ?").bind(`csrf:${csrfToken}`).first();
+  if (!csrfRow || csrfRow.value < new Date().toISOString().replace('T', ' ').slice(0, 19)) {
+    return c.json({ error: 'Invalid or expired token' }, 403);
+  }
+  await db.prepare("DELETE FROM settings WHERE key = ?").bind(`csrf:${csrfToken}`).run();
+
+  // Turnstile verification
+  if (c.env.TURNSTILE_SECRET_KEY) {
+    const turnstileToken = formData.get('cf-turnstile-response');
+    if (!turnstileToken) return c.json({ error: 'Captcha verification required' }, 400);
+    const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || '';
+    const valid = await verifyTurnstile(c.env.TURNSTILE_SECRET_KEY, turnstileToken, ip);
+    if (!valid) return c.json({ error: 'Captcha verification failed' }, 403);
+  }
+
+  // Rate limit per IP
+  const clientIP = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || c.req.header('X-Real-IP') || 'unknown';
+  const rateLimitOk = await checkUploadRateLimit(db, clientIP);
+  if (!rateLimitOk) return c.json({ error: 'Too many uploads. Please try again later.' }, 429);
+
   const file = formData.get('file');
   if (!file) return c.json({ error: 'No file provided' }, 400);
 

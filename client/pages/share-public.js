@@ -100,6 +100,8 @@ async function renderUploadPage(main) {
           </div>
         </div>
 
+        ${shareInfo.turnstileSiteKey ? `<div id="turnstile-container" class="mt-4 flex justify-center"></div>` : ''}
+
         <button id="upload-btn" disabled class="w-full mt-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm">
           Upload & Share
         </button>
@@ -198,6 +200,14 @@ async function renderUploadPage(main) {
     passwordInput.classList.toggle('hidden', !passwordToggle.checked);
   });
 
+  // Render Turnstile widget
+  if (shareInfo.turnstileSiteKey && window.turnstile) {
+    window.turnstile.render('#turnstile-container', {
+      sitekey: shareInfo.turnstileSiteKey,
+      theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+    });
+  }
+
   uploadBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
 
@@ -217,6 +227,9 @@ async function renderUploadPage(main) {
     if (passwordToggle.checked && passwordInput.value) {
       formData.append('password', passwordInput.value);
     }
+    formData.append('csrf_token', shareInfo.csrfToken);
+    const turnstileInput = main.querySelector('[name="cf-turnstile-response"]');
+    if (turnstileInput) formData.append('cf-turnstile-response', turnstileInput.value);
 
     try {
       const xhr = new XMLHttpRequest();
