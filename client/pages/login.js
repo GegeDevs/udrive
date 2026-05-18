@@ -396,7 +396,6 @@ async function initLoginUpload(main, shareInfo) {
     uploadBtn.disabled = true;
     uploadBtn.textContent = 'Uploading...';
     main.querySelector('#login-upload-error').classList.add('hidden');
-    main.querySelector('#login-upload-result').classList.add('hidden');
 
     const progressEl = main.querySelector('#login-upload-progress');
     const progressBar = main.querySelector('#login-progress-bar');
