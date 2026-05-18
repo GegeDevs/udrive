@@ -79,8 +79,8 @@ files.get('/', async (c) => {
 
   const result = await drive.listFiles(c.env, db, accountId, folderId);
 
-  // Hide share folder from root listing
-  if (!c.req.query('folderId')) {
+  // Hide share folder from root listing for slave users without share permission
+  if (!c.req.query('folderId') && user.role !== 'master') {
     const shareFolderRow = await db.prepare("SELECT value FROM settings WHERE key = 'share_folder_id'").first();
     if (shareFolderRow?.value) {
       return c.json(result.filter(f => f.id !== shareFolderRow.value));
