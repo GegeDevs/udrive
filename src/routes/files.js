@@ -78,6 +78,15 @@ files.get('/', async (c) => {
   if (!accountId) return c.json({ error: 'No primary account set' }, 400);
 
   const result = await drive.listFiles(c.env, db, accountId, folderId);
+
+  // Hide share folder from root listing
+  if (!c.req.query('folderId')) {
+    const shareFolderRow = await db.prepare("SELECT value FROM settings WHERE key = 'share_folder_id'").first();
+    if (shareFolderRow?.value) {
+      return c.json(result.filter(f => f.id !== shareFolderRow.value));
+    }
+  }
+
   return c.json(result);
 });
 
