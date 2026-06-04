@@ -93,16 +93,16 @@ export async function renameFile(env, db, accountId, fileId, newName) {
 
 export async function deleteFile(env, db, accountId, fileId) {
   const headers = await getAuthHeaders(env, db, accountId);
-  try {
-    const res = await fetch(`${DRIVE_API}/files/${fileId}`, {
-      method: 'PATCH',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trashed: true })
-    });
-    if (!res.ok) throw new Error();
-  } catch {
-    await fetch(`${DRIVE_API}/files/${fileId}`, { method: 'DELETE', headers });
-  }
+  const res = await fetch(`${DRIVE_API}/files/${fileId}`, {
+    method: 'PATCH',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trashed: true })
+  });
+
+  if (res.ok) return;
+
+  const fallbackRes = await fetch(`${DRIVE_API}/files/${fileId}`, { method: 'DELETE', headers });
+  if (!fallbackRes.ok) throw new Error(`Delete failed: ${fallbackRes.status}`);
 }
 
 export async function permanentDeleteFile(env, db, accountId, fileId) {

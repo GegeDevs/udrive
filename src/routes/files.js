@@ -5,6 +5,7 @@ import { logActivity } from '../services/logger.js';
 import * as drive from '../services/google-drive.js';
 
 const files = new Hono();
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 async function getSharedFolderId(db) {
   const row = await db.prepare("SELECT value FROM settings WHERE key = 'shared_folder_id'").first();
@@ -14,6 +15,74 @@ async function getSharedFolderId(db) {
 async function getPrimaryAccountId(db) {
   const row = await db.prepare('SELECT id FROM accounts WHERE is_primary = 1').first();
   return row?.id || null;
+}
+
+async function resolveFileOwnerAccountId(c, db, fileId) {
+  const owner = await db.prepare('SELECT account_id FROM file_owners WHERE file_id = ?').bind(fileId).first();
+  if (owner) return owner.account_id;
+
+  const primaryId = await getPrimaryAccountId(db);
+  if (!primaryId) return null;
+
+  const ownerEmail = await drive.getFileOwnerEmail(c.env, db, primaryId, fileId);
+  if (ownerEmail) {
+    const matchedAccount = await db.prepare('SELECT id FROM accounts WHERE email = ?').bind(ownerEmail).first();
+    if (matchedAccount) {
+      await db.prepare('INSERT OR REPLACE INTO file_owners (file_id, account_id) VALUES (?, ?)').bind(fileId, matchedAccount.id).run();
+      return matchedAccount.id;
+    }
+  }
+
+  return primaryId;
+}
+
+async function deleteOneFile(c, db, fileId) {
+  const accountId = await resolveFileOwnerAccountId(c, db, fileId);
+  if (!accountId) throw new Error('No primary account set');
+
+  await drive.deleteFile(c.env, db, accountId, fileId);
+  await db.prepare('DELETE FROM file_owners WHERE file_id = ?').bind(fileId).run();
+  return accountId;
+}
+
+async function collectFolderTree(c, db, folderId, folderAccountId) {
+  const children = await drive.listFiles(c.env, db, folderAccountId, folderId);
+  const filesToDelete = [];
+  const foldersToDelete = [];
+
+  for (const child of children) {
+    if (child.mimeType === FOLDER_MIME) {
+      const childAccountId = await resolveFileOwnerAccountId(c, db, child.id);
+      if (!childAccountId) throw new Error('No primary account set');
+
+      const nested = await collectFolderTree(c, db, child.id, childAccountId);
+      filesToDelete.push(...nested.files);
+      foldersToDelete.push(...nested.folders, child);
+    } else {
+      filesToDelete.push(child);
+    }
+  }
+
+  return { files: filesToDelete, folders: foldersToDelete };
+}
+
+async function deleteFolderRecursive(c, db, folderId, folderAccountId) {
+  const { files: filesToDelete, folders: foldersToDelete } = await collectFolderTree(c, db, folderId, folderAccountId);
+
+  for (const file of filesToDelete) {
+    await deleteOneFile(c, db, file.id);
+  }
+
+  for (const folder of foldersToDelete) {
+    await deleteOneFile(c, db, folder.id);
+  }
+
+  await deleteOneFile(c, db, folderId);
+
+  return {
+    deletedFiles: filesToDelete.length,
+    deletedFolders: foldersToDelete.length + 1
+  };
 }
 
 files.get('/dlink/:token', async (c) => {
@@ -329,30 +398,19 @@ files.delete('/:fileId', async (c) => {
 
   const db = c.get("db");
   const fileId = c.req.param('fileId');
+  const accountId = await resolveFileOwnerAccountId(c, db, fileId);
+  if (!accountId) return c.json({ error: 'No primary account set' }, 400);
 
-  let accountId;
-  const owner = await db.prepare('SELECT account_id FROM file_owners WHERE file_id = ?').bind(fileId).first();
+  const fileInfo = await drive.getFileInfo(c.env, db, accountId, fileId);
 
-  if (owner) {
-    accountId = owner.account_id;
-  } else {
-    const primaryId = await getPrimaryAccountId(db);
-    if (!primaryId) return c.json({ error: 'No primary account set' }, 400);
-
-    const ownerEmail = await drive.getFileOwnerEmail(c.env, db, primaryId, fileId);
-    if (ownerEmail) {
-      const matchedAccount = await db.prepare('SELECT id FROM accounts WHERE email = ?').bind(ownerEmail).first();
-      if (matchedAccount) {
-        accountId = matchedAccount.id;
-        await db.prepare('INSERT OR REPLACE INTO file_owners (file_id, account_id) VALUES (?, ?)').bind(fileId, accountId).run();
-      }
-    }
-    if (!accountId) accountId = primaryId;
+  if (fileInfo.mimeType === FOLDER_MIME) {
+    const summary = await deleteFolderRecursive(c, db, fileId, accountId);
+    await logActivity(db, user.id, user.username, 'delete', `${fileInfo.name || fileId} (${summary.deletedFiles} files, ${summary.deletedFolders} folders)`);
+    return c.json({ success: true, ...summary });
   }
 
-  await drive.deleteFile(c.env, db, accountId, fileId);
-  await db.prepare('DELETE FROM file_owners WHERE file_id = ?').bind(fileId).run();
-  await logActivity(db, user.id, user.username, 'delete', fileId);
+  await deleteOneFile(c, db, fileId);
+  await logActivity(db, user.id, user.username, 'delete', fileInfo.name || fileId);
   return c.json({ success: true });
 });
 
