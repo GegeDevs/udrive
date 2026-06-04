@@ -66,23 +66,47 @@ async function collectFolderTree(c, db, folderId, folderAccountId) {
   return { files: filesToDelete, folders: foldersToDelete };
 }
 
+async function tryDeleteOneFile(c, db, item) {
+  try {
+    await deleteOneFile(c, db, item.id);
+    return { deleted: true, item };
+  } catch (err) {
+    return { deleted: false, item, error: err.message };
+  }
+}
+
 async function deleteFolderRecursive(c, db, folderId, folderAccountId) {
   const { files: filesToDelete, folders: foldersToDelete } = await collectFolderTree(c, db, folderId, folderAccountId);
+  const errors = [];
+  let deletedFiles = 0;
+  let deletedFolders = 0;
 
   for (const file of filesToDelete) {
-    await deleteOneFile(c, db, file.id);
+    const result = await tryDeleteOneFile(c, db, file);
+    if (result.deleted) {
+      deletedFiles++;
+    } else {
+      errors.push({ id: file.id, name: file.name, error: result.error });
+    }
   }
 
   for (const folder of foldersToDelete) {
-    await deleteOneFile(c, db, folder.id);
+    const result = await tryDeleteOneFile(c, db, folder);
+    if (result.deleted) {
+      deletedFolders++;
+    } else {
+      errors.push({ id: folder.id, name: folder.name, error: result.error });
+    }
   }
 
-  await deleteOneFile(c, db, folderId);
+  const rootResult = await tryDeleteOneFile(c, db, { id: folderId });
+  if (rootResult.deleted) {
+    deletedFolders++;
+  } else {
+    errors.push({ id: folderId, error: rootResult.error });
+  }
 
-  return {
-    deletedFiles: filesToDelete.length,
-    deletedFolders: foldersToDelete.length + 1
-  };
+  return { deletedFiles, deletedFolders, failed: errors.length, errors };
 }
 
 files.get('/dlink/:token', async (c) => {
@@ -405,8 +429,8 @@ files.delete('/:fileId', async (c) => {
 
   if (fileInfo.mimeType === FOLDER_MIME) {
     const summary = await deleteFolderRecursive(c, db, fileId, accountId);
-    await logActivity(db, user.id, user.username, 'delete', `${fileInfo.name || fileId} (${summary.deletedFiles} files, ${summary.deletedFolders} folders)`);
-    return c.json({ success: true, ...summary });
+    await logActivity(db, user.id, user.username, 'delete', `${fileInfo.name || fileId} (${summary.deletedFiles} files, ${summary.deletedFolders} folders, ${summary.failed} failed)`);
+    return c.json({ success: summary.failed === 0, ...summary });
   }
 
   await deleteOneFile(c, db, fileId);
