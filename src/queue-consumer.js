@@ -112,14 +112,27 @@ async function scanFolderTreeUnlimited(env, db, rootFolderId, rootAccountId, dep
 
 async function processDeleteJob(env, db, job) {
   const { folderId, accountId, userId, username, folderName } = job;
+  const jobId = `delete_${folderId}_${Date.now()}`;
 
   console.log(`Queue: Starting delete job for folder ${folderId}`);
+
+  // Create job record
+  await db.prepare(
+    'INSERT INTO queue_jobs (job_id, folder_id, folder_name, user_id, username, status) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(jobId, folderId, folderName, userId, username, 'scanning').run();
 
   try {
     // Scan entire tree without limits
     const scanned = await scanFolderTreeUnlimited(env, db, folderId, accountId);
 
     console.log(`Queue: Scanned ${scanned.files.length} files, ${scanned.folders.length} folders`);
+
+    const totalItems = scanned.files.length + scanned.folders.length + 1; // +1 for root folder
+
+    // Update job with total items
+    await db.prepare(
+      'UPDATE queue_jobs SET status = ?, total_items = ?, started_at = datetime(?) WHERE job_id = ?'
+    ).bind('processing', totalItems, 'now', jobId).run();
 
     // Sort folders deepest first
     const sortedFolders = scanned.folders.sort((a, b) => b.depth - a.depth);
@@ -140,7 +153,11 @@ async function processDeleteJob(env, db, job) {
           errors.push({ id: file.id, name: file.name, error: err.message });
         }
       }));
-      // Small delay between batches
+
+      await db.prepare(
+        'UPDATE queue_jobs SET processed_items = ?, failed_items = ?, error_details = ? WHERE job_id = ?'
+      ).bind(deletedFiles + deletedFolders, errors.length, JSON.stringify(errors.slice(0, 10)), jobId).run();
+
       await new Promise(resolve => setTimeout(resolve, 200));
     }
 
@@ -156,6 +173,11 @@ async function processDeleteJob(env, db, job) {
           errors.push({ id: folder.id, name: folder.name, error: err.message });
         }
       }));
+
+      await db.prepare(
+        'UPDATE queue_jobs SET processed_items = ?, failed_items = ?, error_details = ? WHERE job_id = ?'
+      ).bind(deletedFiles + deletedFolders, errors.length, JSON.stringify(errors.slice(0, 10)), jobId).run();
+
       await new Promise(resolve => setTimeout(resolve, 200));
     }
 
@@ -174,12 +196,23 @@ async function processDeleteJob(env, db, job) {
       console.error('Queue: First 5 errors:', errors.slice(0, 5));
     }
 
+    // Update job status to completed
+    await db.prepare(
+      'UPDATE queue_jobs SET status = ?, processed_items = ?, failed_items = ?, error_details = ?, completed_at = datetime(?) WHERE job_id = ?'
+    ).bind('completed', deletedFiles + deletedFolders, errors.length, JSON.stringify(errors.slice(0, 10)), 'now', jobId).run();
+
     // Log activity
     await logActivity(db, userId, username, 'delete_async', `${folderName || folderId} (${deletedFiles} files, ${deletedFolders} folders, ${errors.length} failed)`);
 
     return { success: errors.length === 0, deletedFiles, deletedFolders, failed: errors.length, errors: errors.slice(0, 10) };
   } catch (err) {
     console.error(`Queue: Delete job failed - ${err.message}`);
+
+    // Update job status to failed
+    await db.prepare(
+      'UPDATE queue_jobs SET status = ?, error_details = ?, completed_at = datetime(?) WHERE job_id = ?'
+    ).bind('failed', JSON.stringify({ error: err.message }), 'now', jobId).run();
+
     throw err;
   }
 }

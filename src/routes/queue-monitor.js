@@ -70,26 +70,11 @@ queueMonitor.get('/active', async (c) => {
   const db = c.get('db');
 
   try {
-    // Jobs queued in last 10 minutes that haven't completed yet
+    // Get jobs from queue_jobs table
     const activeJobs = await db.prepare(`
-      SELECT
-        q.id,
-        q.user_id,
-        q.username,
-        q.detail,
-        q.created_at as queued_at,
-        c.created_at as completed_at,
-        CASE
-          WHEN c.id IS NULL THEN 'processing'
-          ELSE 'completed'
-        END as status
-      FROM activity_log q
-      LEFT JOIN activity_log c ON c.action = 'delete_async'
-        AND c.detail LIKE '%' || SUBSTR(q.detail, 1, 20) || '%'
-        AND c.created_at > q.created_at
-      WHERE q.action = 'delete_queued'
-        AND q.created_at > datetime('now', '-10 minutes')
-      ORDER BY q.created_at DESC
+      SELECT * FROM queue_jobs
+      WHERE status IN ('queued', 'scanning', 'processing')
+      ORDER BY created_at DESC
       LIMIT 50
     `).all();
 
@@ -98,6 +83,38 @@ queueMonitor.get('/active', async (c) => {
     });
   } catch (error) {
     console.error('Active jobs error:', error);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// Get job details by ID
+queueMonitor.get('/job/:jobId', async (c) => {
+  const user = c.get('user');
+  let err = requireAuth(c, user);
+  if (err) return err;
+  err = requirePermission(c, user, 'admin:queue');
+  if (err) return err;
+
+  const db = c.get('db');
+  const jobId = c.req.param('jobId');
+
+  try {
+    const job = await db.prepare('SELECT * FROM queue_jobs WHERE job_id = ?').bind(jobId).first();
+
+    if (!job) {
+      return c.json({ error: 'Job not found' }, 404);
+    }
+
+    // Parse error_details if present
+    if (job.error_details) {
+      try {
+        job.error_details = JSON.parse(job.error_details);
+      } catch {}
+    }
+
+    return c.json({ job });
+  } catch (error) {
+    console.error('Job details error:', error);
     return c.json({ error: error.message }, 500);
   }
 });

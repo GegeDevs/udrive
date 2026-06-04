@@ -134,29 +134,60 @@ function updateActiveJobs(jobs) {
   }
 
   container.innerHTML = `
-    <div class="space-y-2">
-      ${jobs.map(job => `
-        <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded">
-          <div class="flex-1">
-            <div class="font-medium">${escapeHtml(job.username)}</div>
-            <div class="text-sm text-gray-600 dark:text-gray-400">${escapeHtml(job.detail)}</div>
-          </div>
-          <div class="text-right">
-            <div class="text-sm">
-              <span class="px-2 py-1 rounded text-xs font-medium ${
-                job.status === 'completed'
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                  : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-              }">
-                ${job.status}
-              </span>
+    <div class="space-y-3">
+      ${jobs.map(job => {
+        const percent = job.total_items > 0 ? Math.round((job.processed_items / job.total_items) * 100) : 0;
+        const statusColors = {
+          queued: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200',
+          scanning: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+          processing: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+          completed: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+          failed: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+        };
+
+        return `
+          <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <div class="flex items-start justify-between mb-2">
+              <div class="flex-1">
+                <div class="font-medium">${escapeHtml(job.username)}</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">${escapeHtml(job.folder_name || job.folder_id)}</div>
+              </div>
+              <div class="text-right">
+                <span class="px-2 py-1 rounded text-xs font-medium ${statusColors[job.status] || statusColors.queued}">
+                  ${job.status}
+                </span>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  ${formatTimeAgo(job.created_at)}
+                </div>
+              </div>
             </div>
-            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              ${formatTimeAgo(job.queued_at)}
-            </div>
+            ${job.status === 'processing' ? `
+              <div class="mt-2">
+                <div class="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
+                  <span>${job.processed_items} / ${job.total_items} items</span>
+                  <span>${percent}%</span>
+                </div>
+                <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                  <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: ${percent}%"></div>
+                </div>
+                ${job.failed_items > 0 ? `
+                  <div class="text-xs text-red-600 dark:text-red-400 mt-1">
+                    ${job.failed_items} failed
+                  </div>
+                ` : ''}
+              </div>
+            ` : ''}
+            ${job.status === 'scanning' ? `
+              <div class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                <div class="flex items-center gap-2">
+                  <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <span>Scanning folder tree...</span>
+                </div>
+              </div>
+            ` : ''}
           </div>
-        </div>
-      `).join('')}
+        `;
+      }).join('')}
     </div>
   `;
 }

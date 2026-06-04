@@ -126,6 +126,23 @@ export async function initDB(db) {
     INSERT OR IGNORE INTO settings (key, value) VALUES ('share_max_file_size_mb', '100');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('share_allowed_accounts', '[]');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('share_cleanup_interval_minutes', '60');
+
+    CREATE TABLE IF NOT EXISTS queue_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id TEXT UNIQUE NOT NULL,
+      folder_id TEXT NOT NULL,
+      folder_name TEXT,
+      user_id INTEGER,
+      username TEXT,
+      status TEXT DEFAULT 'queued',
+      total_items INTEGER DEFAULT 0,
+      processed_items INTEGER DEFAULT 0,
+      failed_items INTEGER DEFAULT 0,
+      error_details TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      started_at TEXT,
+      completed_at TEXT
+    );
   `);
 
   // Migrations for existing databases
