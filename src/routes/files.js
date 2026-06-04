@@ -6,8 +6,8 @@ import * as drive from '../services/google-drive.js';
 
 const files = new Hono();
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
-const MAX_SCAN_DEPTH = 20;
-const MAX_SCAN_ITEMS = 500;
+const MAX_SCAN_DEPTH = 5;
+const MAX_SCAN_ITEMS = 20;
 
 async function getSharedFolderId(db) {
   const row = await db.prepare("SELECT value FROM settings WHERE key = 'shared_folder_id'").first();
@@ -67,7 +67,6 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
     totalScanned.count += children.length;
 
     if (totalScanned.count > MAX_SCAN_ITEMS) {
-      // Return top-level subfolders for guidance
       const topLevelFolders = children.filter(c => c.mimeType === FOLDER_MIME);
       return {
         error: `Folder contains more than ${MAX_SCAN_ITEMS} items. Please delete subfolders individually first.`,
@@ -77,7 +76,6 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
       };
     }
 
-    // Batch resolve owner accounts for all children first
     const childrenWithOwners = [];
     for (const child of children) {
       const childAccountId = await resolveFileOwnerAccountId(c, db, child.id);
@@ -87,7 +85,6 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
       childrenWithOwners.push({ ...child, accountId: childAccountId });
     }
 
-    // Process all non-folders first
     for (const child of childrenWithOwners) {
       if (child.mimeType !== FOLDER_MIME) {
         scannedFiles.push({
@@ -100,7 +97,6 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
       }
     }
 
-    // Then recursively process folders
     for (const child of childrenWithOwners) {
       if (child.mimeType === FOLDER_MIME) {
         scannedFolders.push({
@@ -121,6 +117,7 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
 
     return { files: scannedFiles, folders: scannedFolders };
   } catch (err) {
+    console.error(`scanFolderTree error:`, err.message);
     return { error: err.message };
   }
 }
@@ -494,15 +491,39 @@ files.delete('/:fileId', async (c) => {
       const scannedItems = await scanFolderTree(c, db, fileId, accountId, 0, totalScanned);
 
       if (scannedItems.error) {
-        // Return detailed error with subfolders if too large
-        if (scannedItems.tooLarge && scannedItems.subfolders) {
-          return c.json({
-            error: scannedItems.error,
-            tooLarge: true,
-            suggestion: scannedItems.suggestion,
-            subfolders: scannedItems.subfolders
-          }, 400);
+        // If folder too large, enqueue to background queue
+        if (scannedItems.tooLarge) {
+          // Check if DELETE_QUEUE is available (Cloudflare Workers only)
+          if (c.env.DELETE_QUEUE) {
+            await c.env.DELETE_QUEUE.send({
+              folderId: fileId,
+              accountId: accountId,
+              userId: user.id,
+              username: user.username,
+              folderName: fileInfo.name
+            });
+
+            await logActivity(db, user.id, user.username, 'delete_queued', `${fileInfo.name || fileId} (queued for background deletion)`);
+
+            return c.json({
+              success: true,
+              queued: true,
+              message: 'Folder is large. Deletion is processing in background. This may take several minutes.',
+              folderName: fileInfo.name
+            });
+          }
+
+          // Fallback: return guidance to delete subfolders
+          if (scannedItems.subfolders) {
+            return c.json({
+              error: scannedItems.error,
+              tooLarge: true,
+              suggestion: scannedItems.suggestion,
+              subfolders: scannedItems.subfolders
+            }, 400);
+          }
         }
+
         return c.json({ error: scannedItems.error }, 500);
       }
 

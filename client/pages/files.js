@@ -698,6 +698,14 @@ async function deleteAction(fileId, name) {
   try {
     const result = await api(`/api/files/${fileId}`, { method: 'DELETE' });
 
+    if (result.queued) {
+      showToast(`${result.message || 'Folder deletion queued for background processing'}`, 'info');
+      const params = getQueryParams();
+      loadFiles(params.get('folderId'));
+      renderSidebar();
+      return;
+    }
+
     if (result.success === false) {
       showToast(`Partial delete: ${result.deletedFiles || 0} files, ${result.deletedFolders || 0} folders deleted, ${result.failed || 0} failed`, 'error');
     } else {
