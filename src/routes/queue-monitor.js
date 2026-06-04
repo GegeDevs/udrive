@@ -35,12 +35,12 @@ queueMonitor.get('/stats', async (c) => {
 
     // Get recent queued jobs
     const recentQueued = await db.prepare(
-      "SELECT id, user_id, username, details, created_at FROM activity_log WHERE action = 'delete_queued' ORDER BY created_at DESC LIMIT 20"
+      "SELECT id, user_id, username, detail, created_at FROM activity_log WHERE action = 'delete_queued' ORDER BY created_at DESC LIMIT 20"
     ).all();
 
     // Get recent completed jobs
     const recentCompleted = await db.prepare(
-      "SELECT id, user_id, username, details, created_at FROM activity_log WHERE action = 'delete_async' ORDER BY created_at DESC LIMIT 20"
+      "SELECT id, user_id, username, detail, created_at FROM activity_log WHERE action = 'delete_async' ORDER BY created_at DESC LIMIT 20"
     ).all();
 
     return c.json({
@@ -76,7 +76,7 @@ queueMonitor.get('/active', async (c) => {
         q.id,
         q.user_id,
         q.username,
-        q.details,
+        q.detail,
         q.created_at as queued_at,
         c.created_at as completed_at,
         CASE
@@ -85,7 +85,7 @@ queueMonitor.get('/active', async (c) => {
         END as status
       FROM activity_log q
       LEFT JOIN activity_log c ON c.action = 'delete_async'
-        AND c.details LIKE '%' || SUBSTR(q.details, 1, 20) || '%'
+        AND c.detail LIKE '%' || SUBSTR(q.detail, 1, 20) || '%'
         AND c.created_at > q.created_at
       WHERE q.action = 'delete_queued'
         AND q.created_at > datetime('now', '-10 minutes')

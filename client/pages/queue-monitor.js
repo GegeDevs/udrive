@@ -137,7 +137,7 @@ function updateActiveJobs(jobs) {
         <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded">
           <div class="flex-1">
             <div class="font-medium">${escapeHtml(job.username)}</div>
-            <div class="text-sm text-gray-600 dark:text-gray-400">${escapeHtml(job.details)}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-400">${escapeHtml(job.detail)}</div>
           </div>
           <div class="text-right">
             <div class="text-sm">
@@ -173,7 +173,7 @@ function updateRecentQueued(jobs) {
         <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded">
           <div class="flex-1">
             <div class="font-medium">${escapeHtml(job.username)}</div>
-            <div class="text-sm text-gray-600 dark:text-gray-400">${escapeHtml(job.details)}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-400">${escapeHtml(job.detail)}</div>
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400">
             ${formatTimeAgo(job.created_at)}
@@ -198,7 +198,7 @@ function updateRecentCompleted(jobs) {
         <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded">
           <div class="flex-1">
             <div class="font-medium">${escapeHtml(job.username)}</div>
-            <div class="text-sm text-gray-600 dark:text-gray-400">${escapeHtml(job.details)}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-400">${escapeHtml(job.detail)}</div>
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400">
             ${formatTimeAgo(job.created_at)}
