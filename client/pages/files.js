@@ -696,8 +696,14 @@ async function deleteAction(fileId, name) {
   if (!confirm(`Delete "${name}"?`)) return;
 
   try {
-    await api(`/api/files/${fileId}`, { method: 'DELETE' });
-    showToast('Deleted successfully', 'success');
+    const result = await api(`/api/files/${fileId}`, { method: 'DELETE' });
+
+    if (result.success === false) {
+      showToast(`Partial delete: ${result.deletedFiles || 0} files, ${result.deletedFolders || 0} folders deleted, ${result.failed || 0} failed`, 'error');
+    } else {
+      showToast('Deleted successfully', 'success');
+    }
+
     const params = getQueryParams();
     loadFiles(params.get('folderId'));
     renderSidebar();
@@ -712,15 +718,28 @@ async function bulkDelete() {
 
   const params = getQueryParams();
   let success = 0;
+  let failed = 0;
+
   for (const fileId of selectedFiles) {
     try {
-      await api(`/api/files/${fileId}`, { method: 'DELETE' });
-      success++;
+      const result = await api(`/api/files/${fileId}`, { method: 'DELETE' });
+      if (result.success !== false) {
+        success++;
+      } else {
+        failed++;
+      }
     } catch (err) {
+      failed++;
       showToast(`Failed to delete: ${err.message}`, 'error');
     }
   }
-  showToast(`Deleted ${success} item(s)`, 'success');
+
+  if (failed > 0) {
+    showToast(`Deleted ${success} item(s), ${failed} failed`, 'error');
+  } else {
+    showToast(`Deleted ${success} item(s)`, 'success');
+  }
+
   loadFiles(params.get('folderId'));
   renderSidebar();
 }

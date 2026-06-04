@@ -20,6 +20,29 @@ export async function listFiles(env, db, accountId, folderId) {
   return data.files || [];
 }
 
+export async function listAllFiles(env, db, accountId, folderId) {
+  const headers = await getAuthHeaders(env, db, accountId);
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+  const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType,size,modifiedTime)');
+
+  const allFiles = [];
+  let pageToken = null;
+
+  do {
+    let url = `${DRIVE_API}/files?q=${q}&fields=${fields}&pageSize=1000`;
+    if (pageToken) url += `&pageToken=${pageToken}`;
+
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`List files failed: ${res.status}`);
+
+    const data = await res.json();
+    if (data.files) allFiles.push(...data.files);
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return allFiles;
+}
+
 export async function uploadFile(env, db, accountId, folderId, fileBuffer, metadata) {
   const headers = await getAuthHeaders(env, db, accountId);
   const boundary = 'udrive_boundary';

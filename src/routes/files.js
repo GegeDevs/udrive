@@ -36,77 +36,101 @@ async function resolveFileOwnerAccountId(c, db, fileId) {
   return primaryId;
 }
 
-async function deleteOneFile(c, db, fileId) {
-  const accountId = await resolveFileOwnerAccountId(c, db, fileId);
-  if (!accountId) throw new Error('No primary account set');
-
+async function deleteOneFile(c, db, fileId, accountId) {
   await drive.deleteFile(c.env, db, accountId, fileId);
   await db.prepare('DELETE FROM file_owners WHERE file_id = ?').bind(fileId).run();
-  return accountId;
 }
 
-async function collectFolderTree(c, db, folderId, folderAccountId) {
-  const children = await drive.listFiles(c.env, db, folderAccountId, folderId);
-  const filesToDelete = [];
-  const foldersToDelete = [];
-
-  for (const child of children) {
-    if (child.mimeType === FOLDER_MIME) {
-      const childAccountId = await resolveFileOwnerAccountId(c, db, child.id);
-      if (!childAccountId) throw new Error('No primary account set');
-
-      const nested = await collectFolderTree(c, db, child.id, childAccountId);
-      filesToDelete.push(...nested.files);
-      foldersToDelete.push(...nested.folders, child);
-    } else {
-      filesToDelete.push(child);
-    }
-  }
-
-  return { files: filesToDelete, folders: foldersToDelete };
-}
-
-async function tryDeleteOneFile(c, db, item) {
+async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0) {
   try {
-    await deleteOneFile(c, db, item.id);
-    return { deleted: true, item };
+    const children = await drive.listAllFiles(c.env, db, rootAccountId, rootFolderId);
+    const scannedFiles = [];
+    const scannedFolders = [];
+
+    for (const child of children) {
+      if (child.mimeType === FOLDER_MIME) {
+        const childAccountId = await resolveFileOwnerAccountId(c, db, child.id);
+        if (!childAccountId) {
+          return { error: 'No primary account set' };
+        }
+
+        scannedFolders.push({
+          id: child.id,
+          name: child.name,
+          mimeType: child.mimeType,
+          depth: depth + 1,
+          accountId: childAccountId
+        });
+
+        const nested = await scanFolderTree(c, db, child.id, childAccountId, depth + 1);
+        if (nested.error) return nested;
+
+        scannedFiles.push(...nested.files);
+        scannedFolders.push(...nested.folders);
+      } else {
+        const childAccountId = await resolveFileOwnerAccountId(c, db, child.id);
+        if (!childAccountId) {
+          return { error: 'No primary account set' };
+        }
+
+        scannedFiles.push({
+          id: child.id,
+          name: child.name,
+          mimeType: child.mimeType,
+          depth: depth + 1,
+          accountId: childAccountId
+        });
+      }
+    }
+
+    return { files: scannedFiles, folders: scannedFolders };
   } catch (err) {
-    return { deleted: false, item, error: err.message };
+    return { error: err.message };
   }
 }
 
-async function deleteFolderRecursive(c, db, folderId, folderAccountId) {
-  const { files: filesToDelete, folders: foldersToDelete } = await collectFolderTree(c, db, folderId, folderAccountId);
+function buildFolderDeletePlan(scannedItems) {
+  const filesToDelete = scannedItems.files;
+  const foldersToDelete = scannedItems.folders.sort((a, b) => b.depth - a.depth);
+  return { filesToDelete, foldersToDelete };
+}
+
+async function executeFolderDeletePlan(c, db, plan, rootFolderId, rootAccountId) {
   const errors = [];
   let deletedFiles = 0;
   let deletedFolders = 0;
 
-  for (const file of filesToDelete) {
-    const result = await tryDeleteOneFile(c, db, file);
-    if (result.deleted) {
+  for (const file of plan.filesToDelete) {
+    try {
+      await deleteOneFile(c, db, file.id, file.accountId);
       deletedFiles++;
-    } else {
-      errors.push({ id: file.id, name: file.name, error: result.error });
+    } catch (err) {
+      errors.push({ id: file.id, name: file.name, error: err.message });
     }
   }
 
-  for (const folder of foldersToDelete) {
-    const result = await tryDeleteOneFile(c, db, folder);
-    if (result.deleted) {
+  for (const folder of plan.foldersToDelete) {
+    try {
+      await deleteOneFile(c, db, folder.id, folder.accountId);
       deletedFolders++;
-    } else {
-      errors.push({ id: folder.id, name: folder.name, error: result.error });
+    } catch (err) {
+      errors.push({ id: folder.id, name: folder.name, error: err.message });
     }
   }
 
-  const rootResult = await tryDeleteOneFile(c, db, { id: folderId });
-  if (rootResult.deleted) {
+  try {
+    await deleteOneFile(c, db, rootFolderId, rootAccountId);
     deletedFolders++;
-  } else {
-    errors.push({ id: folderId, error: rootResult.error });
+  } catch (err) {
+    errors.push({ id: rootFolderId, error: err.message });
   }
 
-  return { deletedFiles, deletedFolders, failed: errors.length, errors };
+  return {
+    deletedFiles,
+    deletedFolders,
+    failed: errors.length,
+    errors
+  };
 }
 
 files.get('/dlink/:token', async (c) => {
@@ -428,12 +452,25 @@ files.delete('/:fileId', async (c) => {
   const fileInfo = await drive.getFileInfo(c.env, db, accountId, fileId);
 
   if (fileInfo.mimeType === FOLDER_MIME) {
-    const summary = await deleteFolderRecursive(c, db, fileId, accountId);
+    const scannedItems = await scanFolderTree(c, db, fileId, accountId);
+
+    if (scannedItems.error) {
+      return c.json({ error: scannedItems.error }, 500);
+    }
+
+    const plan = buildFolderDeletePlan(scannedItems);
+    const summary = await executeFolderDeletePlan(c, db, plan, fileId, accountId);
+
     await logActivity(db, user.id, user.username, 'delete', `${fileInfo.name || fileId} (${summary.deletedFiles} files, ${summary.deletedFolders} folders, ${summary.failed} failed)`);
-    return c.json({ success: summary.failed === 0, ...summary });
+
+    if (summary.failed > 0) {
+      return c.json({ success: false, ...summary }, 500);
+    }
+
+    return c.json({ success: true, ...summary });
   }
 
-  await deleteOneFile(c, db, fileId);
+  await deleteOneFile(c, db, fileId, accountId);
   await logActivity(db, user.id, user.username, 'delete', fileInfo.name || fileId);
   return c.json({ success: true });
 });
