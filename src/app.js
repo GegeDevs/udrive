@@ -9,6 +9,7 @@ import activityRoutes from './routes/activity.js';
 import logsRoutes from './routes/logs.js';
 import apiV1Routes from './routes/api-v1.js';
 import apiKeysRoutes from './routes/api-keys.js';
+import queueMonitorRoutes from './routes/queue-monitor.js';
 import { sharePublic, shareAdmin } from './routes/share.js';
 
 export function createApp(getDB, envVars = null) {
@@ -50,6 +51,7 @@ export function createApp(getDB, envVars = null) {
   app.route('/api/activity', activityRoutes);
   app.route('/api/logs', logsRoutes);
   app.route('/api/api-keys', apiKeysRoutes);
+  app.route('/api/queue', queueMonitorRoutes);
   app.route('/api/v1', apiV1Routes);
 
   // Short download link

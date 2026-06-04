@@ -11,7 +11,7 @@ const ALL_PERMISSIONS = [
   'accounts:view', 'accounts:view_email', 'accounts:add', 'accounts:remove', 'accounts:set_primary',
   'accounts:refresh', 'accounts:import_export', 'accounts:color', 'accounts:clean_all',
   'settings:view', 'settings:edit', 'settings:keepalive', 'settings:database',
-  'admin:view_users', 'admin:manage_users', 'admin:edit_permissions', 'admin:view_activity', 'admin:view_logs', 'admin:manage_api', 'admin:view_api_docs',
+  'admin:view_users', 'admin:manage_users', 'admin:edit_permissions', 'admin:view_activity', 'admin:view_logs', 'admin:manage_api', 'admin:view_api_docs', 'admin:queue',
   'share:view', 'share:manage', 'share:settings'
 ];
 
@@ -20,7 +20,7 @@ const PERMISSION_GROUPS = {
   trash: ['trash:view', 'trash:restore', 'trash:permanent_delete', 'trash:empty'],
   accounts: ['accounts:view', 'accounts:view_email', 'accounts:add', 'accounts:remove', 'accounts:set_primary', 'accounts:refresh', 'accounts:import_export', 'accounts:color', 'accounts:clean_all'],
   settings: ['settings:view', 'settings:edit', 'settings:keepalive', 'settings:database'],
-  admin: ['admin:view_users', 'admin:manage_users', 'admin:edit_permissions', 'admin:view_activity', 'admin:view_logs', 'admin:manage_api', 'admin:view_api_docs'],
+  admin: ['admin:view_users', 'admin:manage_users', 'admin:edit_permissions', 'admin:view_activity', 'admin:view_logs', 'admin:manage_api', 'admin:view_api_docs', 'admin:queue'],
   share: ['share:view', 'share:manage', 'share:settings']
 };
 

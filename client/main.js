@@ -17,6 +17,7 @@ import { renderApiAccessPage } from './pages/api-access.js';
 import { renderApiDocsPage } from './pages/api-docs.js';
 import { renderSharePublicPage } from './pages/share-public.js';
 import { renderFileSharePage, destroyFileSharePage } from './pages/file-share.js';
+import { initQueueMonitor, cleanupQueueMonitor } from './pages/queue-monitor.js';
 import { showLogoutModal } from './components/logout-modal.js';
 import { api } from './api.js';
 import { setCurrentUser, hasPermission, hasPageAccess, getCurrentUser } from './auth-state.js';
@@ -116,6 +117,11 @@ async function initApp() {
       if (!hasPermission('admin:view_api_docs') && getCurrentUser()?.role !== 'master') { navigate('/'); return; }
       renderApiDocsPage();
     });
+    registerRoute('/queue-monitor', () => {
+      if (!hasPermission('admin:queue') && getCurrentUser()?.role !== 'master') { navigate('/'); return; }
+      initQueueMonitor();
+      return cleanupQueueMonitor;
+    });
     registerRoute('/file-share', () => {
       if (!hasPageAccess('share')) { navigate('/'); return; }
       renderFileSharePage();
@@ -144,6 +150,7 @@ function initMobileNav() {
     if (path === '/users' && !hasPermission('admin:view_users') && getCurrentUser()?.role !== 'master') visible = false;
     if (path === '/activity' && !hasPermission('admin:view_activity') && getCurrentUser()?.role !== 'master') visible = false;
     if (path === '/logs' && !hasPermission('admin:view_logs') && getCurrentUser()?.role !== 'master') visible = false;
+    if (path === '/queue-monitor' && !hasPermission('admin:queue') && getCurrentUser()?.role !== 'master') visible = false;
     if (path === '/api-access' && !hasPermission('admin:manage_api') && getCurrentUser()?.role !== 'master') visible = false;
     if (path === '/api-docs' && !hasPermission('admin:view_api_docs') && getCurrentUser()?.role !== 'master') visible = false;
     if (path === '/file-share' && !hasPageAccess('share')) visible = false;

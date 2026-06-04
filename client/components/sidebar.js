@@ -37,6 +37,7 @@ export function updateSidebarContent(sidebar, totalUsed, totalLimit, collapsed) 
   if (isMaster || hasPermission('admin:view_users')) navItems.push({ path: '/users', icon: 'admin_panel_settings', label: 'Users' });
   if (isMaster || hasPermission('admin:view_activity')) navItems.push({ path: '/activity', icon: 'history', label: 'Activity' });
   if (isMaster || hasPermission('admin:view_logs')) navItems.push({ path: '/logs', icon: 'terminal', label: 'Logs' });
+  if (isMaster || hasPermission('admin:queue')) navItems.push({ path: '/queue-monitor', icon: 'storage', label: 'Queue Monitor' });
   if (isMaster || hasPermission('admin:manage_api')) navItems.push({ path: '/api-access', icon: 'vpn_key', label: 'API Access' });
   if (isMaster || hasPermission('admin:view_api_docs')) navItems.push({ path: '/api-docs', icon: 'menu_book', label: 'API Docs' });
   if (hasPageAccess('share')) navItems.push({ path: '/file-share', icon: 'share', label: 'File Share' });
