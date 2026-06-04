@@ -482,43 +482,49 @@ files.delete('/:fileId', async (c) => {
 
   const db = c.get("db");
   const fileId = c.req.param('fileId');
-  const accountId = await resolveFileOwnerAccountId(c, db, fileId);
-  if (!accountId) return c.json({ error: 'No primary account set' }, 400);
 
-  const fileInfo = await drive.getFileInfo(c.env, db, accountId, fileId);
+  try {
+    const accountId = await resolveFileOwnerAccountId(c, db, fileId);
+    if (!accountId) return c.json({ error: 'No primary account set' }, 400);
 
-  if (fileInfo.mimeType === FOLDER_MIME) {
-    const totalScanned = { count: 0 };
-    const scannedItems = await scanFolderTree(c, db, fileId, accountId, 0, totalScanned);
+    const fileInfo = await drive.getFileInfo(c.env, db, accountId, fileId);
 
-    if (scannedItems.error) {
-      // Return detailed error with subfolders if too large
-      if (scannedItems.tooLarge && scannedItems.subfolders) {
-        return c.json({
-          error: scannedItems.error,
-          tooLarge: true,
-          suggestion: scannedItems.suggestion,
-          subfolders: scannedItems.subfolders
-        }, 400);
+    if (fileInfo.mimeType === FOLDER_MIME) {
+      const totalScanned = { count: 0 };
+      const scannedItems = await scanFolderTree(c, db, fileId, accountId, 0, totalScanned);
+
+      if (scannedItems.error) {
+        // Return detailed error with subfolders if too large
+        if (scannedItems.tooLarge && scannedItems.subfolders) {
+          return c.json({
+            error: scannedItems.error,
+            tooLarge: true,
+            suggestion: scannedItems.suggestion,
+            subfolders: scannedItems.subfolders
+          }, 400);
+        }
+        return c.json({ error: scannedItems.error }, 500);
       }
-      return c.json({ error: scannedItems.error }, 500);
+
+      const plan = buildFolderDeletePlan(scannedItems);
+      const summary = await executeFolderDeletePlan(c, db, plan, fileId, accountId);
+
+      await logActivity(db, user.id, user.username, 'delete', `${fileInfo.name || fileId} (${summary.deletedFiles} files, ${summary.deletedFolders} folders, ${summary.failed} failed)`);
+
+      if (summary.failed > 0) {
+        return c.json({ success: false, ...summary }, 500);
+      }
+
+      return c.json({ success: true, ...summary });
     }
 
-    const plan = buildFolderDeletePlan(scannedItems);
-    const summary = await executeFolderDeletePlan(c, db, plan, fileId, accountId);
-
-    await logActivity(db, user.id, user.username, 'delete', `${fileInfo.name || fileId} (${summary.deletedFiles} files, ${summary.deletedFolders} folders, ${summary.failed} failed)`);
-
-    if (summary.failed > 0) {
-      return c.json({ success: false, ...summary }, 500);
-    }
-
-    return c.json({ success: true, ...summary });
+    await deleteOneFile(c, db, fileId, accountId);
+    await logActivity(db, user.id, user.username, 'delete', fileInfo.name || fileId);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Delete error:', error);
+    return c.json({ error: error.message || 'Delete failed' }, 500);
   }
-
-  await deleteOneFile(c, db, fileId, accountId);
-  await logActivity(db, user.id, user.username, 'delete', fileInfo.name || fileId);
-  return c.json({ success: true });
 });
 
 files.post('/:fileId/move', async (c) => {

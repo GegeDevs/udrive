@@ -27,8 +27,15 @@ export async function listAllFiles(env, db, accountId, folderId) {
 
   const allFiles = [];
   let pageToken = null;
+  let pageCount = 0;
+  const maxPages = 20; // Safety limit: max 20 pages (20,000 files)
 
   do {
+    if (pageCount >= maxPages) {
+      console.warn(`listAllFiles: Reached max pages (${maxPages}) for folder ${folderId}`);
+      break;
+    }
+
     let url = `${DRIVE_API}/files?q=${q}&fields=${fields}&pageSize=1000`;
     if (pageToken) url += `&pageToken=${pageToken}`;
 
@@ -36,8 +43,12 @@ export async function listAllFiles(env, db, accountId, folderId) {
     if (!res.ok) throw new Error(`List files failed: ${res.status}`);
 
     const data = await res.json();
-    if (data.files) allFiles.push(...data.files);
+    if (data.files && data.files.length > 0) {
+      allFiles.push(...data.files);
+    }
+
     pageToken = data.nextPageToken;
+    pageCount++;
   } while (pageToken);
 
   return allFiles;
