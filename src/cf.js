@@ -105,6 +105,22 @@ const SCHEMA = `
   INSERT OR IGNORE INTO settings (key, value) VALUES ('share_default_expiry_days', '7');
   INSERT OR IGNORE INTO settings (key, value) VALUES ('share_max_expiry_days', '30');
   INSERT OR IGNORE INTO settings (key, value) VALUES ('share_max_file_size_mb', '100');
+  CREATE TABLE IF NOT EXISTS queue_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT UNIQUE NOT NULL,
+    folder_id TEXT NOT NULL,
+    folder_name TEXT,
+    user_id INTEGER,
+    username TEXT,
+    status TEXT DEFAULT 'queued',
+    total_items INTEGER DEFAULT 0,
+    processed_items INTEGER DEFAULT 0,
+    failed_items INTEGER DEFAULT 0,
+    error_details TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    started_at TEXT,
+    completed_at TEXT
+  );
 `;
 
 let migrated = false;
