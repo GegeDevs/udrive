@@ -6,6 +6,8 @@ import * as drive from '../services/google-drive.js';
 
 const files = new Hono();
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
+const MAX_SCAN_DEPTH = 20;
+const MAX_SCAN_ITEMS = 500;
 
 async function getSharedFolderId(db) {
   const row = await db.prepare("SELECT value FROM settings WHERE key = 'shared_folder_id'").first();
@@ -41,45 +43,79 @@ async function deleteOneFile(c, db, fileId, accountId) {
   await db.prepare('DELETE FROM file_owners WHERE file_id = ?').bind(fileId).run();
 }
 
-async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0) {
+async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, totalScanned = { count: 0 }) {
+  if (depth > MAX_SCAN_DEPTH) {
+    return {
+      error: `Maximum scan depth (${MAX_SCAN_DEPTH}) exceeded. Folder structure too deep.`,
+      tooDeep: true
+    };
+  }
+
+  if (totalScanned.count > MAX_SCAN_ITEMS) {
+    return {
+      error: `Maximum scan items (${MAX_SCAN_ITEMS}) exceeded. Folder too large to delete in one operation.`,
+      tooLarge: true,
+      scannedSoFar: totalScanned.count
+    };
+  }
+
   try {
     const children = await drive.listAllFiles(c.env, db, rootAccountId, rootFolderId);
     const scannedFiles = [];
     const scannedFolders = [];
 
+    totalScanned.count += children.length;
+
+    if (totalScanned.count > MAX_SCAN_ITEMS) {
+      // Return top-level subfolders for guidance
+      const topLevelFolders = children.filter(c => c.mimeType === FOLDER_MIME);
+      return {
+        error: `Folder contains more than ${MAX_SCAN_ITEMS} items. Please delete subfolders individually first.`,
+        tooLarge: true,
+        suggestion: 'Delete these subfolders first:',
+        subfolders: topLevelFolders.map(f => ({ id: f.id, name: f.name }))
+      };
+    }
+
+    // Batch resolve owner accounts for all children first
+    const childrenWithOwners = [];
     for (const child of children) {
-      if (child.mimeType === FOLDER_MIME) {
-        const childAccountId = await resolveFileOwnerAccountId(c, db, child.id);
-        if (!childAccountId) {
-          return { error: 'No primary account set' };
-        }
+      const childAccountId = await resolveFileOwnerAccountId(c, db, child.id);
+      if (!childAccountId) {
+        return { error: 'No primary account set' };
+      }
+      childrenWithOwners.push({ ...child, accountId: childAccountId });
+    }
 
-        scannedFolders.push({
-          id: child.id,
-          name: child.name,
-          mimeType: child.mimeType,
-          depth: depth + 1,
-          accountId: childAccountId
-        });
-
-        const nested = await scanFolderTree(c, db, child.id, childAccountId, depth + 1);
-        if (nested.error) return nested;
-
-        scannedFiles.push(...nested.files);
-        scannedFolders.push(...nested.folders);
-      } else {
-        const childAccountId = await resolveFileOwnerAccountId(c, db, child.id);
-        if (!childAccountId) {
-          return { error: 'No primary account set' };
-        }
-
+    // Process all non-folders first
+    for (const child of childrenWithOwners) {
+      if (child.mimeType !== FOLDER_MIME) {
         scannedFiles.push({
           id: child.id,
           name: child.name,
           mimeType: child.mimeType,
           depth: depth + 1,
-          accountId: childAccountId
+          accountId: child.accountId
         });
+      }
+    }
+
+    // Then recursively process folders
+    for (const child of childrenWithOwners) {
+      if (child.mimeType === FOLDER_MIME) {
+        scannedFolders.push({
+          id: child.id,
+          name: child.name,
+          mimeType: child.mimeType,
+          depth: depth + 1,
+          accountId: child.accountId
+        });
+
+        const nested = await scanFolderTree(c, db, child.id, child.accountId, depth + 1, totalScanned);
+        if (nested.error) return nested;
+
+        scannedFiles.push(...nested.files);
+        scannedFolders.push(...nested.folders);
       }
     }
 
@@ -452,9 +488,19 @@ files.delete('/:fileId', async (c) => {
   const fileInfo = await drive.getFileInfo(c.env, db, accountId, fileId);
 
   if (fileInfo.mimeType === FOLDER_MIME) {
-    const scannedItems = await scanFolderTree(c, db, fileId, accountId);
+    const totalScanned = { count: 0 };
+    const scannedItems = await scanFolderTree(c, db, fileId, accountId, 0, totalScanned);
 
     if (scannedItems.error) {
+      // Return detailed error with subfolders if too large
+      if (scannedItems.tooLarge && scannedItems.subfolders) {
+        return c.json({
+          error: scannedItems.error,
+          tooLarge: true,
+          suggestion: scannedItems.suggestion,
+          subfolders: scannedItems.subfolders
+        }, 400);
+      }
       return c.json({ error: scannedItems.error }, 500);
     }
 

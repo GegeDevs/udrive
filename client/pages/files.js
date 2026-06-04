@@ -708,6 +708,22 @@ async function deleteAction(fileId, name) {
     loadFiles(params.get('folderId'));
     renderSidebar();
   } catch (err) {
+    // Check if folder too large with subfolders guidance
+    if (err.response?.tooLarge && err.response?.subfolders) {
+      const subfolderList = err.response.subfolders
+        .map(f => `• ${f.name}`)
+        .join('\n');
+
+      const message = `${err.message}\n\n${err.response.suggestion || 'Delete these subfolders first:'}\n${subfolderList}`;
+
+      if (confirm(message + '\n\nOpen this folder to delete subfolders?')) {
+        folderStack.push({ id: fileId, name });
+        saveFolderStack();
+        window.location.hash = `/?folderId=${fileId}`;
+        return;
+      }
+    }
+
     showToast(err.message, 'error');
   }
 }

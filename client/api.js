@@ -8,7 +8,10 @@ export async function api(path, options = {}) {
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `Request failed: ${res.status}`);
+    const error = new Error(data.error || `Request failed: ${res.status}`);
+    error.response = data;
+    error.status = res.status;
+    throw error;
   }
 
   const contentType = res.headers.get('content-type');
