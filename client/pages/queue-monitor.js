@@ -7,7 +7,8 @@ let pollInterval = null;
 
 export function initQueueMonitor() {
   if (!hasPermission('admin:queue')) {
-    document.getElementById('app').innerHTML = `
+    const main = document.getElementById('main-content');
+    main.innerHTML = `
       <div class="flex items-center justify-center h-screen">
         <div class="text-center">
           <h2 class="text-2xl font-bold mb-4">Access Denied</h2>
@@ -18,10 +19,11 @@ export function initQueueMonitor() {
     return;
   }
 
-  document.getElementById('app').innerHTML = `
-    <div class="p-6">
+  const main = document.getElementById('main-content');
+  main.innerHTML = `
+    <div class="p-3 md:p-6">
       <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-bold">Queue Monitor</h1>
+        <h1 class="text-xl md:text-2xl font-bold">Queue Monitor</h1>
         <div class="flex items-center gap-4">
           <span id="queue-status" class="text-sm text-gray-600 dark:text-gray-400">Checking...</span>
           <button id="refresh-btn" class="btn-secondary">
