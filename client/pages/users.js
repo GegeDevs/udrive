@@ -44,7 +44,8 @@ const PERMISSION_GROUPS = [
       { key: 'accounts:set_primary', label: 'Set Primary' },
       { key: 'accounts:refresh', label: 'Refresh Storage' },
       { key: 'accounts:import_export', label: 'Import/Export Config' },
-      { key: 'accounts:color', label: 'Change Color' }
+      { key: 'accounts:color', label: 'Change Color' },
+      { key: 'accounts:clean_all', label: 'Clean All Files' }
     ]
   },
   {

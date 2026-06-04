@@ -25,6 +25,10 @@ export function renderAccountsPage() {
             <span class="material-icons-outlined text-base md:text-lg">sync</span>
             <span class="hidden sm:inline">Refresh All</span>
           </button>` : ''}
+          ${hasPermission('accounts:clean_all') ? `<button id="btn-clean-all" class="btn-secondary text-red-600 dark:text-red-400">
+            <span class="material-icons-outlined text-base md:text-lg">delete_forever</span>
+            <span class="hidden sm:inline">Clean All</span>
+          </button>` : ''}
           ${hasPermission('accounts:add') ? `<a href="/auth/login" class="btn-primary">
             <span class="material-icons-outlined text-base md:text-lg">person_add</span>
             <span class="hidden sm:inline">Add Account</span>
@@ -122,6 +126,45 @@ export function renderAccountsPage() {
         } catch (e) {}
       }
       showToast('All accounts refreshed', 'success');
+      loadAccounts();
+      renderSidebar();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      icon.classList.remove('animate-spin');
+      btn.disabled = false;
+    }
+  });
+
+  main.querySelector('#btn-clean-all')?.addEventListener('click', async () => {
+    const btn = main.querySelector('#btn-clean-all');
+    if (btn.disabled) return;
+
+    if (!confirm('Permanently delete ALL files from EVERY configured Google Drive account? This cannot be undone.')) {
+      return;
+    }
+
+    const confirmation = prompt('Type CLEAN ALL to permanently delete all files from every account:');
+    if (confirmation !== 'CLEAN ALL') {
+      return;
+    }
+
+    btn.disabled = true;
+    const icon = btn.querySelector('.material-icons-outlined');
+    icon.classList.add('animate-spin');
+
+    try {
+      const result = await api('/api/accounts/clean-all', {
+        method: 'POST',
+        body: JSON.stringify({ confirmation: 'CLEAN ALL' })
+      });
+
+      if (result.failed > 0) {
+        showToast(`Deleted ${result.deleted} file(s); ${result.failed} failed`, 'error');
+      } else {
+        showToast(`Permanently deleted ${result.deleted} file(s)`, 'success');
+      }
+
       loadAccounts();
       renderSidebar();
     } catch (err) {

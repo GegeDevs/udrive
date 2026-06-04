@@ -224,3 +224,61 @@ export async function getThumbnail(env, db, accountId, fileId, size = 200) {
     contentLength: thumbRes.headers.get('content-length')
   };
 }
+
+export async function cleanAllFiles(env, db, accountId) {
+  const headers = await getAuthHeaders(env, db, accountId);
+  let deleted = 0;
+  let failed = 0;
+  const errors = [];
+
+  // List all files owned by this account (including trashed)
+  const allFiles = [];
+  let pageToken = null;
+
+  do {
+    const q = encodeURIComponent("'me' in owners");
+    const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType)');
+    let url = `${DRIVE_API}/files?q=${q}&fields=${fields}&pageSize=1000`;
+    if (pageToken) url += `&pageToken=${pageToken}`;
+
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      errors.push({ accountId, error: `List failed: ${res.status}` });
+      break;
+    }
+
+    const data = await res.json();
+    if (data.files) allFiles.push(...data.files);
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  // Separate non-folders and folders
+  const nonFolders = allFiles.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
+  const folders = allFiles.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+
+  // Delete non-folders first
+  for (const file of nonFolders) {
+    const res = await fetch(`${DRIVE_API}/files/${file.id}`, { method: 'DELETE', headers });
+    if (res.ok || res.status === 404) {
+      deleted++;
+      await db.prepare('DELETE FROM file_owners WHERE file_id = ?').bind(file.id).run();
+    } else {
+      failed++;
+      errors.push({ accountId, fileId: file.id, error: `${res.status}` });
+    }
+  }
+
+  // Delete folders
+  for (const folder of folders) {
+    const res = await fetch(`${DRIVE_API}/files/${folder.id}`, { method: 'DELETE', headers });
+    if (res.ok || res.status === 404) {
+      deleted++;
+      await db.prepare('DELETE FROM file_owners WHERE file_id = ?').bind(folder.id).run();
+    } else {
+      failed++;
+      errors.push({ accountId, fileId: folder.id, error: `${res.status}` });
+    }
+  }
+
+  return { deleted, failed, errors };
+}

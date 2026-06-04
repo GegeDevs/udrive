@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { getStorageQuota, shareFolder } from '../services/google-drive.js';
+import { getStorageQuota, shareFolder, cleanAllFiles } from '../services/google-drive.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { logActivity } from '../services/logger.js';
 
@@ -121,6 +121,56 @@ accounts.post('/export-rclone', async (c) => {
   }
 
   return c.json({ config });
+});
+
+accounts.post('/clean-all', async (c) => {
+  const user = c.get('user');
+  let err = requireAuth(c, user);
+  if (err) return err;
+  err = requirePermission(c, user, 'accounts:clean_all');
+  if (err) return err;
+
+  const db = c.get("db");
+  const body = await c.req.json();
+  if (body.confirmation !== 'CLEAN ALL') {
+    return c.json({ error: 'Invalid confirmation' }, 400);
+  }
+
+  const { results } = await db.prepare('SELECT id, email FROM accounts ORDER BY is_primary DESC, created_at ASC').all();
+  let accountsProcessed = 0;
+  let totalDeleted = 0;
+  let totalFailed = 0;
+  const allErrors = [];
+
+  for (const acc of results) {
+    accountsProcessed++;
+    try {
+      const result = await cleanAllFiles(c.env, db, acc.id);
+      totalDeleted += result.deleted;
+      totalFailed += result.failed;
+      allErrors.push(...result.errors);
+
+      // Refresh storage quota
+      try {
+        const quota = await getStorageQuota(c.env, db, acc.id);
+        await db.prepare("UPDATE accounts SET storage_limit = ?, storage_used = ?, file_count = ?, updated_at = datetime('now') WHERE id = ?")
+          .bind(quota.limit, quota.used, quota.fileCount, acc.id).run();
+      } catch {}
+    } catch (e) {
+      totalFailed++;
+      allErrors.push({ accountId: acc.id, error: e.message });
+    }
+  }
+
+  await logActivity(db, user.id, user.username, 'clean_all', `${totalDeleted} deleted, ${totalFailed} failed`);
+
+  return c.json({
+    success: true,
+    accountsProcessed,
+    deleted: totalDeleted,
+    failed: totalFailed,
+    errors: allErrors.slice(0, 10)
+  });
 });
 
 accounts.get('/', async (c) => {
