@@ -1,7 +1,43 @@
 import * as drive from './services/google-drive.js';
 import { logActivity } from './services/logger.js';
+import { refreshTokenIfNeeded } from './services/token-manager.js';
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
+const DRIVE_API = 'https://www.googleapis.com/drive/v3';
+
+async function getAuthHeaders(env, db, accountId) {
+  let account = await db.prepare('SELECT * FROM accounts WHERE id = ?').bind(accountId).first();
+  if (!account) throw new Error('Account not found');
+  account = await refreshTokenIfNeeded(env, db, account);
+  return { Authorization: `Bearer ${account.access_token}` };
+}
+
+async function listAllFilesUnlimited(env, db, accountId, folderId) {
+  const headers = await getAuthHeaders(env, db, accountId);
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+  const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType)');
+
+  const allFiles = [];
+  let pageToken = null;
+
+  do {
+    let url = `${DRIVE_API}/files?q=${q}&fields=${fields}&pageSize=1000`;
+    if (pageToken) url += `&pageToken=${pageToken}`;
+
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`List files failed: ${res.status}`);
+
+    const data = await res.json();
+    if (data.files && data.files.length > 0) {
+      allFiles.push(...data.files);
+    }
+
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  console.log(`Queue: Listed ${allFiles.length} items in folder ${folderId}`);
+  return allFiles;
+}
 
 async function resolveFileOwnerAccountId(env, db, fileId) {
   const owner = await db.prepare('SELECT account_id FROM file_owners WHERE file_id = ?').bind(fileId).first();
@@ -30,7 +66,7 @@ async function deleteOneFile(env, db, fileId, accountId) {
 
 async function scanFolderTreeUnlimited(env, db, rootFolderId, rootAccountId, depth = 0) {
   try {
-    const children = await drive.listAllFiles(env, db, rootAccountId, rootFolderId);
+    const children = await listAllFilesUnlimited(env, db, rootAccountId, rootFolderId);
     const scannedFiles = [];
     const scannedFolders = [];
 
@@ -95,30 +131,32 @@ async function processDeleteJob(env, db, job) {
     // Delete files in batches of 10
     for (let i = 0; i < scanned.files.length; i += 10) {
       const batch = scanned.files.slice(i, i + 10);
-      for (const file of batch) {
+      await Promise.allSettled(batch.map(async (file) => {
         try {
           await deleteOneFile(env, db, file.id, file.accountId);
           deletedFiles++;
         } catch (err) {
+          console.error(`Queue: Failed to delete file ${file.id} (${file.name}):`, err.message);
           errors.push({ id: file.id, name: file.name, error: err.message });
         }
-      }
+      }));
       // Small delay between batches
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     // Delete folders in batches of 10
     for (let i = 0; i < sortedFolders.length; i += 10) {
       const batch = sortedFolders.slice(i, i + 10);
-      for (const folder of batch) {
+      await Promise.allSettled(batch.map(async (folder) => {
         try {
           await deleteOneFile(env, db, folder.id, folder.accountId);
           deletedFolders++;
         } catch (err) {
+          console.error(`Queue: Failed to delete folder ${folder.id} (${folder.name}):`, err.message);
           errors.push({ id: folder.id, name: folder.name, error: err.message });
         }
-      }
-      await new Promise(resolve => setTimeout(resolve, 100));
+      }));
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     // Delete root folder
@@ -130,6 +168,11 @@ async function processDeleteJob(env, db, job) {
     }
 
     console.log(`Queue: Completed - ${deletedFiles} files, ${deletedFolders} folders deleted, ${errors.length} failed`);
+
+    // Log first few errors for debugging
+    if (errors.length > 0) {
+      console.error('Queue: First 5 errors:', errors.slice(0, 5));
+    }
 
     // Log activity
     await logActivity(db, userId, username, 'delete_async', `${folderName || folderId} (${deletedFiles} files, ${deletedFolders} folders, ${errors.length} failed)`);

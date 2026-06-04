@@ -35,10 +35,13 @@ export function formatDate(dateStr) {
 
 export function formatTimeAgo(dateStr) {
   if (!dateStr) return '—';
+
+  // Parse UTC time from database
+  const then = new Date(dateStr + 'Z'); // Add Z to ensure UTC parsing
   const now = new Date();
-  const then = new Date(dateStr);
   const seconds = Math.floor((now - then) / 1000);
 
+  if (seconds < 0) return 'just now'; // Future time (clock skew)
   if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
