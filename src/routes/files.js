@@ -43,11 +43,13 @@ async function deleteOneFile(c, db, fileId, accountId) {
   await db.prepare('DELETE FROM file_owners WHERE file_id = ?').bind(fileId).run();
 }
 
-async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, totalScanned = { count: 0 }) {
+async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, totalScanned = { count: 0 }, allFiles = [], allFolders = []) {
   if (depth > MAX_SCAN_DEPTH) {
     return {
       error: `Maximum scan depth (${MAX_SCAN_DEPTH}) exceeded. Folder structure too deep.`,
-      tooDeep: true
+      tooDeep: true,
+      files: allFiles,
+      folders: allFolders
     };
   }
 
@@ -55,7 +57,9 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
     return {
       error: `Maximum scan items (${MAX_SCAN_ITEMS}) exceeded. Folder too large to delete in one operation.`,
       tooLarge: true,
-      scannedSoFar: totalScanned.count
+      scannedSoFar: totalScanned.count,
+      files: allFiles,
+      folders: allFolders
     };
   }
 
@@ -67,12 +71,38 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
     totalScanned.count += children.length;
 
     if (totalScanned.count > MAX_SCAN_ITEMS) {
-      const topLevelFolders = children.filter(c => c.mimeType === FOLDER_MIME);
+      // Return what we've scanned so far for queue processing
+      const childrenWithOwners = [];
+      for (const child of children) {
+        const childAccountId = await resolveFileOwnerAccountId(c, db, child.id);
+        if (!childAccountId) {
+          return { error: 'No primary account set', files: allFiles, folders: allFolders };
+        }
+        childrenWithOwners.push({ ...child, accountId: childAccountId });
+      }
+
+      for (const child of childrenWithOwners) {
+        if (child.mimeType !== FOLDER_MIME) {
+          allFiles.push({
+            id: child.id,
+            name: child.name,
+            accountId: child.accountId
+          });
+        } else {
+          allFolders.push({
+            id: child.id,
+            name: child.name,
+            depth: depth + 1,
+            accountId: child.accountId
+          });
+        }
+      }
+
       return {
-        error: `Folder contains more than ${MAX_SCAN_ITEMS} items. Please delete subfolders individually first.`,
+        error: `Folder contains more than ${MAX_SCAN_ITEMS} items. Enqueuing for background processing.`,
         tooLarge: true,
-        suggestion: 'Delete these subfolders first:',
-        subfolders: topLevelFolders.map(f => ({ id: f.id, name: f.name }))
+        files: allFiles,
+        folders: allFolders
       };
     }
 
@@ -97,6 +127,8 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
       }
     }
 
+    allFiles.push(...scannedFiles);
+
     for (const child of childrenWithOwners) {
       if (child.mimeType === FOLDER_MIME) {
         scannedFolders.push({
@@ -107,7 +139,9 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
           accountId: child.accountId
         });
 
-        const nested = await scanFolderTree(c, db, child.id, child.accountId, depth + 1, totalScanned);
+        allFolders.push(...scannedFolders);
+
+        const nested = await scanFolderTree(c, db, child.id, child.accountId, depth + 1, totalScanned, allFiles, allFolders);
         if (nested.error) return nested;
 
         scannedFiles.push(...nested.files);
@@ -115,10 +149,10 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
       }
     }
 
-    return { files: scannedFiles, folders: scannedFolders };
+    return { files: allFiles, folders: allFolders };
   } catch (err) {
     console.error(`scanFolderTree error:`, err.message);
-    return { error: err.message };
+    return { error: err.message, files: allFiles, folders: allFolders };
   }
 }
 
