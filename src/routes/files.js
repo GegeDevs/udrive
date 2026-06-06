@@ -497,12 +497,16 @@ files.delete('/:fileId', async (c) => {
           console.log('DELETE_QUEUE available:', !!c.env.DELETE_QUEUE);
           if (c.env.DELETE_QUEUE) {
             try {
+              // Send the scanned items to queue (already scanned, no need to scan again)
               await c.env.DELETE_QUEUE.send({
                 folderId: fileId,
+                folderName: fileInfo.name,
                 accountId: accountId,
                 userId: user.id,
                 username: user.username,
-                folderName: fileInfo.name
+                // Send pre-scanned items to avoid re-scanning in consumer
+                files: scannedItems.files || [],
+                folders: scannedItems.folders || []
               });
 
               console.log('Job enqueued for folder:', fileInfo.name);
