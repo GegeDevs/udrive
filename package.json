@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"node src/local.js\" \"vite\"",
-    "build": "vite build && node scripts/build-worker.js",
+    "build": "node scripts/generate-build-info.js && vite build && node scripts/build-worker.js",
     "start": "node src/local.js"
   },
   "dependencies": {

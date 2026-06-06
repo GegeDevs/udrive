@@ -1,5 +1,6 @@
 import './style.css';
 import { initTheme } from './theme.js';
+import { updateLastDeployTime } from './update-timestamp.js';
 import { registerRoute, initRouter, navigate } from './router.js';
 import { renderSidebar } from './components/sidebar.js';
 import { initSidebarToggle } from './components/sidebar-toggle.js';
@@ -24,6 +25,7 @@ import { setCurrentUser, hasPermission, hasPageAccess, getCurrentUser } from './
 import { loadTimeSettings } from './time-utils.js';
 
 initTheme();
+updateLastDeployTime();
 
 async function initApp() {
   // Public share routes bypass auth
