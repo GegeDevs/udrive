@@ -59,9 +59,9 @@ async function processDeleteJob(env, db, job) {
     let deletedFolders = 0;
     const errors = [];
 
-    // Delete files in batches of 10
-    for (let i = 0; i < scanned.files.length; i += 10) {
-      const batch = scanned.files.slice(i, i + 10);
+    // Delete files in batches of 5 (reduced to avoid subrequest limit)
+    for (let i = 0; i < scanned.files.length; i += 5) {
+      const batch = scanned.files.slice(i, i + 5);
       await Promise.allSettled(batch.map(async (file) => {
         try {
           await deleteOneFile(env, db, file.id, file.accountId);
@@ -72,16 +72,19 @@ async function processDeleteJob(env, db, job) {
         }
       }));
 
-      await db.prepare(
-        'UPDATE queue_jobs SET processed_items = ?, failed_items = ?, error_details = ? WHERE job_id = ?'
-      ).bind(deletedFiles + deletedFolders, errors.length, JSON.stringify(errors.slice(0, 10)), jobId).run();
+      // Update progress every 5 files
+      if (i % 5 === 0 || i + 5 >= scanned.files.length) {
+        await db.prepare(
+          'UPDATE queue_jobs SET processed_items = ?, failed_items = ?, error_details = ? WHERE job_id = ?'
+        ).bind(deletedFiles + deletedFolders, errors.length, JSON.stringify(errors.slice(0, 10)), jobId).run();
+      }
 
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    // Delete folders in batches of 10
-    for (let i = 0; i < sortedFolders.length; i += 10) {
-      const batch = sortedFolders.slice(i, i + 10);
+    // Delete folders in batches of 5 (reduced to avoid subrequest limit)
+    for (let i = 0; i < sortedFolders.length; i += 5) {
+      const batch = sortedFolders.slice(i, i + 5);
       await Promise.allSettled(batch.map(async (folder) => {
         try {
           await deleteOneFile(env, db, folder.id, folder.accountId);
@@ -92,11 +95,14 @@ async function processDeleteJob(env, db, job) {
         }
       }));
 
-      await db.prepare(
-        'UPDATE queue_jobs SET processed_items = ?, failed_items = ?, error_details = ? WHERE job_id = ?'
-      ).bind(deletedFiles + deletedFolders, errors.length, JSON.stringify(errors.slice(0, 10)), jobId).run();
+      // Update progress every 5 folders
+      if (i % 5 === 0 || i + 5 >= sortedFolders.length) {
+        await db.prepare(
+          'UPDATE queue_jobs SET processed_items = ?, failed_items = ?, error_details = ? WHERE job_id = ?'
+        ).bind(deletedFiles + deletedFolders, errors.length, JSON.stringify(errors.slice(0, 10)), jobId).run();
+      }
 
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     // Delete root folder

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "concurrently \"node src/local.js\" \"vite\"",
     "build": "node scripts/generate-build-info.js && vite build && node scripts/build-worker.js",
+    "build:queue": "npx esbuild src/queue-consumer.js --bundle --format=esm --platform=browser --outfile=dist/queue-consumer-worker.js",
     "start": "node src/local.js"
   },
   "dependencies": {
