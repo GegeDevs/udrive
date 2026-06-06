@@ -494,23 +494,33 @@ files.delete('/:fileId', async (c) => {
         // If folder too large, enqueue to background queue
         if (scannedItems.tooLarge) {
           // Check if DELETE_QUEUE is available (Cloudflare Workers only)
+          console.log('DELETE_QUEUE available:', !!c.env.DELETE_QUEUE);
           if (c.env.DELETE_QUEUE) {
-            await c.env.DELETE_QUEUE.send({
-              folderId: fileId,
-              accountId: accountId,
-              userId: user.id,
-              username: user.username,
-              folderName: fileInfo.name
-            });
+            try {
+              await c.env.DELETE_QUEUE.send({
+                folderId: fileId,
+                accountId: accountId,
+                userId: user.id,
+                username: user.username,
+                folderName: fileInfo.name
+              });
 
-            await logActivity(db, user.id, user.username, 'delete_queued', `${fileInfo.name || fileId} (queued for background deletion)`);
+              console.log('Job enqueued for folder:', fileInfo.name);
 
-            return c.json({
-              success: true,
-              queued: true,
-              message: 'Folder is large. Deletion is processing in background. This may take several minutes.',
-              folderName: fileInfo.name
-            });
+              await logActivity(db, user.id, user.username, 'delete_queued', `${fileInfo.name || fileId} (queued for background deletion)`);
+
+              return c.json({
+                success: true,
+                queued: true,
+                message: 'Folder is large. Deletion is processing in background. This may take several minutes.',
+                folderName: fileInfo.name
+              });
+            } catch (queueError) {
+              console.error('Queue send error:', queueError);
+              // Fall through to guidance
+            }
+          } else {
+            console.log('DELETE_QUEUE not available, falling back to guidance');
           }
 
           // Fallback: return guidance to delete subfolders
