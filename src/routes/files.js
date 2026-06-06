@@ -6,8 +6,9 @@ import * as drive from '../services/google-drive.js';
 
 const files = new Hono();
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
-const MAX_SCAN_DEPTH = 5;
-const MAX_SCAN_ITEMS = 20;
+const MAX_SCAN_DEPTH = 10;  // Increased for deeper folders
+const QUEUE_THRESHOLD = 20;  // Trigger queue if >20 items
+const MAX_SCAN_FOR_QUEUE = 1000;  // Max items to scan before sending to queue
 
 async function getSharedFolderId(db) {
   const row = await db.prepare("SELECT value FROM settings WHERE key = 'shared_folder_id'").first();
@@ -53,9 +54,10 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
     };
   }
 
-  if (totalScanned.count > MAX_SCAN_ITEMS) {
+  // Check if we've scanned too many items for sync processing
+  if (totalScanned.count > MAX_SCAN_FOR_QUEUE) {
     return {
-      error: `Maximum scan items (${MAX_SCAN_ITEMS}) exceeded. Folder too large to delete in one operation.`,
+      error: `Maximum scan limit (${MAX_SCAN_FOR_QUEUE}) exceeded. Sending partial scan to queue.`,
       tooLarge: true,
       scannedSoFar: totalScanned.count,
       files: allFiles,
@@ -70,7 +72,11 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
 
     totalScanned.count += children.length;
 
-    if (totalScanned.count > MAX_SCAN_ITEMS) {
+    // Continue scanning but mark as tooLarge if exceeds threshold
+    const shouldQueue = totalScanned.count > QUEUE_THRESHOLD;
+
+    // Stop scanning if we hit the hard limit
+    if (totalScanned.count > MAX_SCAN_FOR_QUEUE) {
       // Return what we've scanned so far for queue processing
       const childrenWithOwners = [];
       for (const child of children) {
@@ -99,7 +105,7 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
       }
 
       return {
-        error: `Folder contains more than ${MAX_SCAN_ITEMS} items. Enqueuing for background processing.`,
+        error: `Folder contains ${totalScanned.count}+ items. Enqueuing for background processing.`,
         tooLarge: true,
         files: allFiles,
         folders: allFolders
@@ -147,6 +153,16 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
         scannedFiles.push(...nested.files);
         scannedFolders.push(...nested.folders);
       }
+    }
+
+    // Check if total items exceed queue threshold after scanning
+    if (totalScanned.count > QUEUE_THRESHOLD) {
+      return {
+        error: `Folder contains ${totalScanned.count} items. Enqueuing for background processing.`,
+        tooLarge: true,
+        files: allFiles,
+        folders: allFolders
+      };
     }
 
     return { files: allFiles, folders: allFolders };
