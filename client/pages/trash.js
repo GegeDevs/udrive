@@ -47,6 +47,10 @@ export function renderTrashPage() {
               <span class="material-icons-outlined text-base md:text-lg">refresh</span>
               <span class="hidden sm:inline">Refresh</span>
             </button>
+            ${hasPermission('trash:restore') ? `<button id="btn-restore-all" class="btn-secondary text-sm">
+              <span class="material-icons-outlined text-base md:text-lg">restore_from_trash</span>
+              <span class="hidden sm:inline">Restore All</span>
+            </button>` : ''}
             ${hasPermission('trash:empty') ? `<button id="btn-empty-trash" class="btn-secondary text-sm">
               <span class="material-icons-outlined text-base md:text-lg">delete_forever</span>
               <span class="hidden sm:inline">Empty Trash</span>
@@ -73,6 +77,42 @@ export function renderTrashPage() {
     try {
       await loadTrash();
       showToast('Trash refreshed', 'success');
+    } finally {
+      icon.classList.remove('animate-spin');
+      btn.disabled = false;
+    }
+  });
+
+  main.querySelector('#btn-restore-all')?.addEventListener('click', async () => {
+    if (!confirm('Restore ALL trashed files from all accounts?')) return;
+    const btn = main.querySelector('#btn-restore-all');
+    btn.disabled = true;
+    const icon = btn.querySelector('.material-icons-outlined');
+    icon.classList.add('animate-spin');
+
+    try {
+      const files = await api('/api/files/trash/list');
+      let count = 0;
+      let failed = 0;
+      for (const file of files) {
+        try {
+          await api(`/api/files/${file.id}/restore`, {
+            method: 'POST',
+            body: JSON.stringify({ accountId: file.accountId })
+          });
+          count++;
+        } catch (e) {
+          failed++;
+        }
+      }
+      if (failed > 0) {
+        showToast(`Restored ${count} file(s), ${failed} failed`, 'warning');
+      } else {
+        showToast(`Restored ${count} file(s)`, 'success');
+      }
+      loadTrash();
+    } catch (err) {
+      showToast(err.message, 'error');
     } finally {
       icon.classList.remove('animate-spin');
       btn.disabled = false;
