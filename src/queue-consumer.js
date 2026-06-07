@@ -41,34 +41,76 @@ async function processDeleteJob(env, db, job) {
     console.error('GOOGLE_CLIENT_SECRET:', env.GOOGLE_CLIENT_SECRET ? 'exists' : 'MISSING');
   }
 
-  // Create job record
+  // Chunk size: process max 15 items per invocation to stay under subrequest limit
+  const CHUNK_SIZE = 15;
+  const remainingFiles = files || [];
+  const remainingFolders = folders || [];
+
+  // If more than 15 files, process chunk and requeue remaining
+  if (remainingFiles.length > CHUNK_SIZE) {
+    const chunk = remainingFiles.slice(0, CHUNK_SIZE);
+    const remaining = remainingFiles.slice(CHUNK_SIZE);
+
+    console.log(`Queue: Processing chunk of ${chunk.length} files, ${remaining.length} remaining`);
+
+    let deletedFiles = 0;
+    const errors = [];
+
+    for (let i = 0; i < chunk.length; i++) {
+      const file = chunk[i];
+      try {
+        await deleteOneFile(env, db, file.id, file.accountId);
+        deletedFiles++;
+      } catch (err) {
+        console.error(`Queue: Failed to delete file ${file.id} (${file.name}):`, err.message);
+        errors.push({ id: file.id, name: file.name, error: err.message });
+      }
+
+      // Small delay every 3 files
+      if ((i + 1) % 3 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    console.log(`Queue: Chunk completed - ${deletedFiles} files deleted, ${errors.length} failed. Requeuing remaining ${remaining.length} files`);
+
+    // Requeue remaining files
+    await env.DELETE_QUEUE.send({
+      folderId,
+      folderName,
+      accountId,
+      userId,
+      username,
+      files: remaining,
+      folders: remainingFolders
+    });
+
+    return { success: true, deletedFiles, deletedFolders: 0, failed: errors.length, chunked: true };
+  }
+
+  // All files fit in one chunk, process normally
   await db.prepare(
     'INSERT INTO queue_jobs (job_id, folder_id, folder_name, user_id, username, status) VALUES (?, ?, ?, ?, ?, ?)'
   ).bind(jobId, folderId, folderName, userId, username, 'processing').run();
 
   try {
-    // Use pre-scanned items from job (no need to scan again)
-    const scanned = { files: files || [], folders: folders || [] };
+    console.log(`Queue: Processing ${remainingFiles.length} files, ${remainingFolders.length} folders (pre-scanned)`);
 
-    console.log(`Queue: Processing ${scanned.files.length} files, ${scanned.folders.length} folders (pre-scanned)`);
+    const totalItems = remainingFiles.length + remainingFolders.length + 1;
 
-    const totalItems = scanned.files.length + scanned.folders.length + 1; // +1 for root folder
-
-    // Update job with total items
     await db.prepare(
       'UPDATE queue_jobs SET total_items = ?, started_at = datetime(?) WHERE job_id = ?'
     ).bind(totalItems, 'now', jobId).run();
 
-    // Sort folders deepest first
-    const sortedFolders = scanned.folders.sort((a, b) => b.depth - a.depth);
+    const sortedFolders = remainingFolders.sort((a, b) => b.depth - a.depth);
 
     let deletedFiles = 0;
     let deletedFolders = 0;
     const errors = [];
 
-    // Delete files one by one with delay every 3 files (avoid subrequest limit)
-    for (let i = 0; i < scanned.files.length; i++) {
-      const file = scanned.files[i];
+    // Delete remaining files
+    for (let i = 0; i < remainingFiles.length; i++) {
+      const file = remainingFiles[i];
       try {
         await deleteOneFile(env, db, file.id, file.accountId);
         deletedFiles++;
@@ -83,7 +125,7 @@ async function processDeleteJob(env, db, job) {
       }
 
       // Update progress every 10 files
-      if (i % 10 === 0 || i === scanned.files.length - 1) {
+      if (i % 10 === 0 || i === remainingFiles.length - 1) {
         await db.prepare(
           'UPDATE queue_jobs SET processed_items = ?, failed_items = ?, error_details = ? WHERE job_id = ?'
         ).bind(deletedFiles + deletedFolders, errors.length, JSON.stringify(errors.slice(0, 10)), jobId).run();
