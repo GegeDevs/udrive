@@ -59,50 +59,42 @@ async function processDeleteJob(env, db, job) {
     let deletedFolders = 0;
     const errors = [];
 
-    // Delete files in batches of 5 (reduced to avoid subrequest limit)
-    for (let i = 0; i < scanned.files.length; i += 5) {
-      const batch = scanned.files.slice(i, i + 5);
-      await Promise.allSettled(batch.map(async (file) => {
-        try {
-          await deleteOneFile(env, db, file.id, file.accountId);
-          deletedFiles++;
-        } catch (err) {
-          console.error(`Queue: Failed to delete file ${file.id} (${file.name}):`, err.message);
-          errors.push({ id: file.id, name: file.name, error: err.message });
-        }
-      }));
+    // Delete files one by one (sequential to avoid subrequest limit)
+    for (let i = 0; i < scanned.files.length; i++) {
+      const file = scanned.files[i];
+      try {
+        await deleteOneFile(env, db, file.id, file.accountId);
+        deletedFiles++;
+      } catch (err) {
+        console.error(`Queue: Failed to delete file ${file.id} (${file.name}):`, err.message);
+        errors.push({ id: file.id, name: file.name, error: err.message });
+      }
 
-      // Update progress every 5 files
-      if (i % 5 === 0 || i + 5 >= scanned.files.length) {
+      // Update progress every 10 files
+      if (i % 10 === 0 || i === scanned.files.length - 1) {
         await db.prepare(
           'UPDATE queue_jobs SET processed_items = ?, failed_items = ?, error_details = ? WHERE job_id = ?'
         ).bind(deletedFiles + deletedFolders, errors.length, JSON.stringify(errors.slice(0, 10)), jobId).run();
       }
-
-      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    // Delete folders in batches of 5 (reduced to avoid subrequest limit)
-    for (let i = 0; i < sortedFolders.length; i += 5) {
-      const batch = sortedFolders.slice(i, i + 5);
-      await Promise.allSettled(batch.map(async (folder) => {
-        try {
-          await deleteOneFile(env, db, folder.id, folder.accountId);
-          deletedFolders++;
-        } catch (err) {
-          console.error(`Queue: Failed to delete folder ${folder.id} (${folder.name}):`, err.message);
-          errors.push({ id: folder.id, name: folder.name, error: err.message });
-        }
-      }));
+    // Delete folders one by one (sequential to avoid subrequest limit)
+    for (let i = 0; i < sortedFolders.length; i++) {
+      const folder = sortedFolders[i];
+      try {
+        await deleteOneFile(env, db, folder.id, folder.accountId);
+        deletedFolders++;
+      } catch (err) {
+        console.error(`Queue: Failed to delete folder ${folder.id} (${folder.name}):`, err.message);
+        errors.push({ id: folder.id, name: folder.name, error: err.message });
+      }
 
-      // Update progress every 5 folders
-      if (i % 5 === 0 || i + 5 >= sortedFolders.length) {
+      // Update progress every 10 folders
+      if (i % 10 === 0 || i === sortedFolders.length - 1) {
         await db.prepare(
           'UPDATE queue_jobs SET processed_items = ?, failed_items = ?, error_details = ? WHERE job_id = ?'
         ).bind(deletedFiles + deletedFolders, errors.length, JSON.stringify(errors.slice(0, 10)), jobId).run();
       }
-
-      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     // Delete root folder
