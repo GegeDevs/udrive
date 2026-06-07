@@ -66,7 +66,7 @@ async function processDeleteJob(env, db, job) {
     let deletedFolders = 0;
     const errors = [];
 
-    // Delete files one by one with small delay (sequential to avoid subrequest limit)
+    // Delete files one by one with delay every 3 files (avoid subrequest limit)
     for (let i = 0; i < scanned.files.length; i++) {
       const file = scanned.files[i];
       try {
@@ -77,9 +77,9 @@ async function processDeleteJob(env, db, job) {
         errors.push({ id: file.id, name: file.name, error: err.message });
       }
 
-      // Small delay every 5 files to avoid hitting subrequest limit
-      if (i > 0 && i % 5 === 0) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+      // Delay every 3 files to avoid hitting subrequest limit
+      if ((i + 1) % 3 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
 
       // Update progress every 10 files
@@ -90,7 +90,7 @@ async function processDeleteJob(env, db, job) {
       }
     }
 
-    // Delete folders one by one with small delay (sequential to avoid subrequest limit)
+    // Delete folders one by one with delay every 3 folders (avoid subrequest limit)
     for (let i = 0; i < sortedFolders.length; i++) {
       const folder = sortedFolders[i];
       try {
@@ -101,9 +101,9 @@ async function processDeleteJob(env, db, job) {
         errors.push({ id: folder.id, name: folder.name, error: err.message });
       }
 
-      // Small delay every 5 folders to avoid hitting subrequest limit
-      if (i > 0 && i % 5 === 0) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+      // Delay every 3 folders to avoid hitting subrequest limit
+      if ((i + 1) % 3 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
 
       // Update progress every 10 folders
