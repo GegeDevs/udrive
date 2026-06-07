@@ -34,6 +34,13 @@ async function processDeleteJob(env, db, job) {
 
   console.log(`Queue: Starting delete job for folder ${folderId}`);
 
+  // Debug: Check if env variables exist
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
+    console.error('Queue: Missing Google OAuth credentials in environment');
+    console.error('GOOGLE_CLIENT_ID:', env.GOOGLE_CLIENT_ID ? 'exists' : 'MISSING');
+    console.error('GOOGLE_CLIENT_SECRET:', env.GOOGLE_CLIENT_SECRET ? 'exists' : 'MISSING');
+  }
+
   // Create job record
   await db.prepare(
     'INSERT INTO queue_jobs (job_id, folder_id, folder_name, user_id, username, status) VALUES (?, ?, ?, ?, ?, ?)'
