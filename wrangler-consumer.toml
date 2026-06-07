@@ -8,10 +8,5 @@ queue = "udrive-delete-queue"
 max_batch_size = 1
 max_batch_timeout = 30
 
-[[d1_databases]]
-binding = "DB"
-database_name = "udrive"
-database_id = "YOUR_D1_DATABASE_ID"
-
 [env.production]
 vars = { }
