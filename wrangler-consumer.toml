@@ -18,6 +18,10 @@ enabled = false
 persist = true
 head_sampling_rate = 1
 
+[[queues.producers]]
+binding = "DELETE_QUEUE"
+queue = "udrive-delete-queue"
+
 [[queues.consumers]]
 queue = "udrive-delete-queue"
 max_batch_size = 1
