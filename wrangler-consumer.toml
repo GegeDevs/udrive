@@ -1,5 +1,5 @@
 name = "udrive-queue-consumer"
-main = "src/queue-consumer.js"
+main = "dist/queue-consumer.js"
 compatibility_date = "2026-06-07"
 compatibility_flags = ["nodejs_compat"]
 
@@ -7,6 +7,10 @@ compatibility_flags = ["nodejs_compat"]
 queue = "udrive-delete-queue"
 max_batch_size = 1
 max_batch_timeout = 30
+
+[[d1_databases]]
+binding = "DB"
+database_name = "udrive"
 
 [env.production]
 vars = { }
