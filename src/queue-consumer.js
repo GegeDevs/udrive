@@ -28,11 +28,56 @@ async function deleteOneFile(env, db, fileId, accountId) {
   await db.prepare('DELETE FROM file_owners WHERE file_id = ?').bind(fileId).run();
 }
 
+async function scanFolderInQueue(env, db, folderId, accountId, maxItems = 100) {
+  const files = [];
+  const folders = [];
+  const FOLDER_MIME = 'application/vnd.google-apps.folder';
+
+  try {
+    // Use quickCountFiles first to check size
+    const quickCount = await drive.quickCountFiles(env, db, accountId, folderId, 1);
+
+    // If too many items, only scan first page
+    const children = quickCount.count > maxItems
+      ? await drive.listFiles(env, db, accountId, folderId) // Single page only
+      : await drive.listAllFiles(env, db, accountId, folderId); // Full scan
+
+    for (const child of children) {
+      const childAccountId = await resolveFileOwnerAccountId(env, db, child.id);
+      if (child.mimeType === FOLDER_MIME) {
+        folders.push({
+          id: child.id,
+          name: child.name,
+          depth: 1,
+          accountId: childAccountId || accountId
+        });
+      } else {
+        files.push({
+          id: child.id,
+          name: child.name,
+          accountId: childAccountId || accountId
+        });
+      }
+
+      // Safety: stop if scanned too many
+      if (files.length + folders.length >= maxItems) {
+        console.log(`Queue: Reached max scan limit (${maxItems}) for folder ${folderId}`);
+        break;
+      }
+    }
+
+    return { files, folders };
+  } catch (err) {
+    console.error(`Queue: Scan error for folder ${folderId}:`, err.message);
+    throw err;
+  }
+}
+
 async function processDeleteJob(env, db, job) {
-  const { folderId, folderName, accountId, userId, username, files, folders } = job;
+  const { folderId, folderName, accountId, userId, username, files, folders, skipScan } = job;
   const jobId = `delete_${folderId}_${Date.now()}`;
 
-  console.log(`Queue: Starting delete job for folder ${folderId}`);
+  console.log(`Queue: Starting delete job for folder ${folderId}${skipScan ? ' (will scan in queue)' : ' (pre-scanned)'}`);
 
   // Debug: Check if env variables exist
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
@@ -41,10 +86,25 @@ async function processDeleteJob(env, db, job) {
     console.error('GOOGLE_CLIENT_SECRET:', env.GOOGLE_CLIENT_SECRET ? 'exists' : 'MISSING');
   }
 
+  let remainingFiles = files || [];
+  let remainingFolders = folders || [];
+
+  // If skipScan=true, we need to scan the folder here in queue consumer
+  if (skipScan || (remainingFiles.length === 0 && remainingFolders.length === 0)) {
+    console.log(`Queue: Scanning folder ${folderId} in queue consumer...`);
+    try {
+      const scanned = await scanFolderInQueue(env, db, folderId, accountId);
+      remainingFiles = scanned.files;
+      remainingFolders = scanned.folders;
+      console.log(`Queue: Scanned ${remainingFiles.length} files, ${remainingFolders.length} folders`);
+    } catch (err) {
+      console.error(`Queue: Scan failed - ${err.message}`);
+      return { success: false, error: err.message };
+    }
+  }
+
   // Chunk size: process max 15 items per invocation to stay under subrequest limit
   const CHUNK_SIZE = 15;
-  const remainingFiles = files || [];
-  const remainingFolders = folders || [];
 
   // If more than 15 files, process chunk and requeue remaining
   if (remainingFiles.length > CHUNK_SIZE) {

@@ -66,6 +66,20 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
   }
 
   try {
+    // Quick count first to decide whether to continue or queue immediately
+    const quickCount = await drive.quickCountFiles(c.env, db, rootAccountId, rootFolderId, 1);
+
+    // If folder has many items (>QUEUE_THRESHOLD), skip full scan and queue immediately
+    if (quickCount.count > QUEUE_THRESHOLD || quickCount.hasMore) {
+      return {
+        error: `Folder contains ${quickCount.count}${quickCount.hasMore ? '+' : ''} items. Enqueuing for background processing without full scan.`,
+        tooLarge: true,
+        skipScan: true,
+        files: [],
+        folders: []
+      };
+    }
+
     const children = await drive.listAllFiles(c.env, db, rootAccountId, rootFolderId);
     const scannedFiles = [];
     const scannedFolders = [];
@@ -541,25 +555,27 @@ files.delete('/:fileId', async (c) => {
       const scannedItems = await scanFolderTree(c, db, fileId, accountId, 0, totalScanned);
 
       if (scannedItems.error) {
-        // If folder too large, enqueue to background queue
-        if (scannedItems.tooLarge) {
+        // If folder too large or skipScan, enqueue to background queue
+        if (scannedItems.tooLarge || scannedItems.skipScan) {
           // Check if DELETE_QUEUE is available (Cloudflare Workers only)
           console.log('DELETE_QUEUE available:', !!c.env.DELETE_QUEUE);
           if (c.env.DELETE_QUEUE) {
             try {
-              // Send the scanned items to queue (already scanned, no need to scan again)
+              // Send the scanned items to queue
+              // If skipScan=true, files/folders arrays will be empty and queue consumer will handle scanning
               await c.env.DELETE_QUEUE.send({
                 folderId: fileId,
                 folderName: fileInfo.name,
                 accountId: accountId,
                 userId: user.id,
                 username: user.username,
-                // Send pre-scanned items to avoid re-scanning in consumer
+                // Send pre-scanned items (empty if skipScan=true)
                 files: scannedItems.files || [],
-                folders: scannedItems.folders || []
+                folders: scannedItems.folders || [],
+                skipScan: scannedItems.skipScan || false
               });
 
-              console.log('Job enqueued for folder:', fileInfo.name);
+              console.log('Job enqueued for folder:', fileInfo.name, scannedItems.skipScan ? '(will scan in queue)' : '(pre-scanned)');
 
               await logActivity(db, user.id, user.username, 'delete_queued', `${fileInfo.name || fileId} (queued for background deletion)`);
 
