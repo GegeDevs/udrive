@@ -28,18 +28,18 @@ async function deleteOneFile(env, db, fileId, accountId) {
   await db.prepare('DELETE FROM file_owners WHERE file_id = ?').bind(fileId).run();
 }
 
-async function scanFolderInQueue(env, db, folderId, accountId, depth = 0, maxDepth = 10, totalScanned = { count: 0 }, maxItems = 100) {
+async function scanFolderInQueue(env, db, folderId, accountId, depth = 0, maxDepth = 5, totalScanned = { count: 0 }, maxItems = 30) {
   const allFiles = [];
   const allFolders = [];
   const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
   if (depth > maxDepth) {
-    console.log(`Queue: Max depth (${maxDepth}) reached for folder ${folderId}`);
+    console.log(`Queue: Max depth (${maxDepth}) reached for folder ${folderId}. Stopping scan to avoid subrequest limit.`);
     return { files: allFiles, folders: allFolders };
   }
 
   if (totalScanned.count >= maxItems) {
-    console.log(`Queue: Max items (${maxItems}) reached, stopping scan`);
+    console.log(`Queue: Max items (${maxItems}) reached, stopping scan to avoid subrequest limit.`);
     return { files: allFiles, folders: allFolders };
   }
 
@@ -101,12 +101,12 @@ async function processDeleteJob(env, db, job) {
 
   // If skipScan=true, we need to scan the folder here in queue consumer
   if (skipScan || (remainingFiles.length === 0 && remainingFolders.length === 0)) {
-    console.log(`Queue: Scanning folder ${folderId} in queue consumer...`);
+    console.log(`Queue: Scanning folder ${folderId} in queue consumer (limited to 30 items, depth 5 to avoid subrequest limit)...`);
     try {
       const scanned = await scanFolderInQueue(env, db, folderId, accountId);
       remainingFiles = scanned.files;
       remainingFolders = scanned.folders;
-      console.log(`Queue: Scanned ${remainingFiles.length} files, ${remainingFolders.length} folders`);
+      console.log(`Queue: Scanned ${remainingFiles.length} files, ${remainingFolders.length} folders (scan may be incomplete due to limits)`);
     } catch (err) {
       console.error(`Queue: Scan failed - ${err.message}`);
       return { success: false, error: err.message };
