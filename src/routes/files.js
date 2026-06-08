@@ -7,8 +7,8 @@ import * as drive from '../services/google-drive.js';
 const files = new Hono();
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const MAX_SCAN_DEPTH = 10;  // Increased for deeper folders
-const QUEUE_THRESHOLD = 20;  // Trigger queue if >20 items
-const MAX_SCAN_FOR_QUEUE = 1000;  // Max items to scan before sending to queue
+const QUEUE_THRESHOLD = 10;  // Trigger queue if >10 items (lowered to avoid subrequest limit)
+const MAX_SCAN_FOR_QUEUE = 50;  // Max items to scan before sending to queue (lowered for safety)
 
 async function getSharedFolderId(db) {
   const row = await db.prepare("SELECT value FROM settings WHERE key = 'shared_folder_id'").first();
