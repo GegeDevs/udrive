@@ -28,45 +28,55 @@ async function deleteOneFile(env, db, fileId, accountId) {
   await db.prepare('DELETE FROM file_owners WHERE file_id = ?').bind(fileId).run();
 }
 
-async function scanFolderInQueue(env, db, folderId, accountId, maxItems = 100) {
-  const files = [];
-  const folders = [];
+async function scanFolderInQueue(env, db, folderId, accountId, depth = 0, maxDepth = 10, totalScanned = { count: 0 }, maxItems = 100) {
+  const allFiles = [];
+  const allFolders = [];
   const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
-  try {
-    // Use quickCountFiles first to check size
-    const quickCount = await drive.quickCountFiles(env, db, accountId, folderId, 1);
+  if (depth > maxDepth) {
+    console.log(`Queue: Max depth (${maxDepth}) reached for folder ${folderId}`);
+    return { files: allFiles, folders: allFolders };
+  }
 
-    // If too many items, only scan first page
-    const children = quickCount.count > maxItems
-      ? await drive.listFiles(env, db, accountId, folderId) // Single page only
-      : await drive.listAllFiles(env, db, accountId, folderId); // Full scan
+  if (totalScanned.count >= maxItems) {
+    console.log(`Queue: Max items (${maxItems}) reached, stopping scan`);
+    return { files: allFiles, folders: allFolders };
+  }
+
+  try {
+    // Scan current folder
+    const children = await drive.listFiles(env, db, accountId, folderId); // Single page only
 
     for (const child of children) {
+      if (totalScanned.count >= maxItems) break;
+
       const childAccountId = await resolveFileOwnerAccountId(env, db, child.id);
+      const childAccount = childAccountId || accountId;
+
       if (child.mimeType === FOLDER_MIME) {
-        folders.push({
+        allFolders.push({
           id: child.id,
           name: child.name,
-          depth: 1,
-          accountId: childAccountId || accountId
+          depth: depth + 1,
+          accountId: childAccount
         });
+
+        // Recursively scan subfolder
+        const subScan = await scanFolderInQueue(env, db, child.id, childAccount, depth + 1, maxDepth, totalScanned, maxItems);
+        allFiles.push(...subScan.files);
+        allFolders.push(...subScan.folders);
       } else {
-        files.push({
+        allFiles.push({
           id: child.id,
           name: child.name,
-          accountId: childAccountId || accountId
+          accountId: childAccount
         });
       }
 
-      // Safety: stop if scanned too many
-      if (files.length + folders.length >= maxItems) {
-        console.log(`Queue: Reached max scan limit (${maxItems}) for folder ${folderId}`);
-        break;
-      }
+      totalScanned.count++;
     }
 
-    return { files, folders };
+    return { files: allFiles, folders: allFolders };
   } catch (err) {
     console.error(`Queue: Scan error for folder ${folderId}:`, err.message);
     throw err;
