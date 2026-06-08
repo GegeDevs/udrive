@@ -116,7 +116,7 @@ async function processDeleteJob(env, db, job) {
   // Chunk size: process max 15 items per invocation to stay under subrequest limit
   const CHUNK_SIZE = 15;
 
-  // If more than 15 files, process chunk and requeue remaining
+  // If more than 15 files, process chunk and requeue remaining FILES ONLY (no folders yet)
   if (remainingFiles.length > CHUNK_SIZE) {
     const chunk = remainingFiles.slice(0, CHUNK_SIZE);
     const remaining = remainingFiles.slice(CHUNK_SIZE);
@@ -142,9 +142,9 @@ async function processDeleteJob(env, db, job) {
       }
     }
 
-    console.log(`Queue: Chunk completed - ${deletedFiles} files deleted, ${errors.length} failed. Requeuing remaining ${remaining.length} files`);
+    console.log(`Queue: Chunk completed - ${deletedFiles} files deleted, ${errors.length} failed. Requeuing remaining ${remaining.length} files (folders will be processed after all files done)`);
 
-    // Requeue remaining files
+    // Requeue remaining files ONLY - keep folders for the final invocation
     await env.DELETE_QUEUE.send({
       folderId,
       folderName,
@@ -152,11 +152,53 @@ async function processDeleteJob(env, db, job) {
       userId,
       username,
       files: remaining,
+      folders: remainingFolders  // Pass folders along but they won't be processed until files array is empty
+    });
+
+    return { success: true, deletedFiles, deletedFolders: 0, failed: errors.length, chunked: true };
+  }
+
+  // If we reach here, remainingFiles.length <= CHUNK_SIZE
+  // Only process folders if files array is completely empty
+  if (remainingFiles.length > 0) {
+    console.log(`Queue: Processing final ${remainingFiles.length} files before folders`);
+
+    let deletedFiles = 0;
+    const errors = [];
+
+    for (let i = 0; i < remainingFiles.length; i++) {
+      const file = remainingFiles[i];
+      try {
+        await deleteOneFile(env, db, file.id, file.accountId);
+        deletedFiles++;
+      } catch (err) {
+        console.error(`Queue: Failed to delete file ${file.id} (${file.name}):`, err.message);
+        errors.push({ id: file.id, name: file.name, error: err.message });
+      }
+
+      if ((i + 1) % 3 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    // After processing all remaining files, requeue to process folders
+    console.log(`Queue: All files processed (${deletedFiles} deleted, ${errors.length} failed). Requeuing to process ${remainingFolders.length} folders`);
+
+    await env.DELETE_QUEUE.send({
+      folderId,
+      folderName,
+      accountId,
+      userId,
+      username,
+      files: [],  // Empty files array signals that folders can now be processed
       folders: remainingFolders
     });
 
     return { success: true, deletedFiles, deletedFolders: 0, failed: errors.length, chunked: true };
   }
+
+  // If we reach here, files array is empty - now process folders
+  console.log(`Queue: All files completed. Now processing ${remainingFolders.length} folders`);
 
   // All files fit in one chunk, process normally
   await db.prepare(
