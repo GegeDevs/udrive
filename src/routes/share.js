@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { uploadFile, downloadFile, permanentDeleteFile } from '../services/google-drive.js';
+import { uploadFile, downloadFile, permanentDeleteFile, ensureAccountFolderAccess } from '../services/google-drive.js';
 import { selectShareAccount } from '../services/account-selector.js';
 import { hashPassword, verifyPassword } from '../services/password.js';
 import { logSystem } from '../services/logger.js';
@@ -154,6 +154,13 @@ sharePublic.post('/upload', async (c) => {
   const account = await selectShareAccount(db, file.size);
   if (!account) {
     return c.json({ error: 'No storage space available' }, 507);
+  }
+
+  // Ensure the selected account has access to the share folder
+  const hasAccess = await ensureAccountFolderAccess(c.env, db, account.id, settings.share_folder_id);
+  if (!hasAccess) {
+    await logSystem(db, 'error', 'Share upload failed: account cannot access share folder', `account: ${account.email}, folder: ${settings.share_folder_id}`);
+    return c.json({ error: 'Storage account cannot access the share folder. Please check configuration.' }, 500);
   }
 
   const buffer = await file.arrayBuffer();

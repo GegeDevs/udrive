@@ -105,6 +105,12 @@ apiv1.post('/files/upload', async (c) => {
   const account = await selectAccount(db, buffer.byteLength);
   if (!account) return c.json({ error: 'Insufficient storage' }, 507);
 
+  // Ensure the selected account has access to the shared folder
+  const hasAccess = await drive.ensureAccountFolderAccess(c.env, db, account.id, folderId);
+  if (!hasAccess) {
+    return c.json({ error: `Account ${account.email} cannot access the shared folder.` }, 500);
+  }
+
   const result = await drive.uploadFile(c.env, db, account.id, folderId, buffer, { name: file.name, type: file.type });
 
   await db.prepare("UPDATE accounts SET storage_used = storage_used + ?, updated_at = datetime('now') WHERE id = ?")

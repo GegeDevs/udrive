@@ -103,9 +103,8 @@
 - File, account, upload, download, move, copy, delete, and transfer endpoints
 
 ### Deployment
-- Local/Docker deployment with better-sqlite3
-- Cloudflare Pages deployment with D1
-- Shared Hono backend for Node.js and Cloudflare Workers
+- Docker/native Node.js deployment with better-sqlite3
+- Hono backend on Node.js
 - Vite + TailwindCSS frontend build
 
 ## Suggested Roadmap

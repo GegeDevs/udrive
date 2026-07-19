@@ -104,7 +104,11 @@ export async function uploadFile(env, db, accountId, folderId, fileBuffer, metad
     body: bodyParts
   });
 
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    console.error(`Upload failed: ${res.status}`, JSON.stringify(errBody));
+    throw new Error(`Upload failed: ${res.status} - ${errBody.error?.message || JSON.stringify(errBody)}`);
+  }
   return res.json();
 }
 
@@ -227,11 +231,52 @@ export async function getStorageQuota(env, db, accountId) {
 
 export async function shareFolder(env, db, primaryAccountId, folderId, email) {
   const headers = await getAuthHeaders(env, db, primaryAccountId);
-  await fetch(`${DRIVE_API}/files/${folderId}/permissions`, {
+  const res = await fetch(`${DRIVE_API}/files/${folderId}/permissions`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 'user', role: 'writer', emailAddress: email })
   });
+  return res.ok;
+}
+
+async function canAccessFolder(env, db, accountId, folderId) {
+  try {
+    const headers = await getAuthHeaders(env, db, accountId);
+    const fields = encodeURIComponent('id,mimeType,capabilities(canAddChildren)');
+    const res = await fetch(`${DRIVE_API}/files/${folderId}?fields=${fields}&supportsAllDrives=true`, { headers });
+    if (!res.ok) return false;
+
+    const folder = await res.json();
+    return folder.mimeType === 'application/vnd.google-apps.folder' && folder.capabilities?.canAddChildren !== false;
+  } catch {
+    return false;
+  }
+}
+
+export async function ensureAccountFolderAccess(env, db, accountId, folderId) {
+  if (!folderId) return false;
+  if (await canAccessFolder(env, db, accountId, folderId)) return true;
+
+  try {
+    const account = await db.prepare('SELECT email FROM accounts WHERE id = ?').bind(accountId).first();
+    if (!account?.email) return false;
+
+    const primary = await db.prepare('SELECT id FROM accounts WHERE is_primary = 1').first();
+    if (!primary) return false;
+
+    const shared = await shareFolder(env, db, primary.id, folderId, account.email);
+    if (!shared) return false;
+
+    // Drive permissions can take a moment to propagate.
+    for (const delayMs of [1000, 2000, 3000]) {
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      if (await canAccessFolder(env, db, accountId, folderId)) return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 export async function getFileOwnerEmail(env, db, accountId, fileId) {

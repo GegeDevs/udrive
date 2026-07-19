@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { requireAuth, requireMaster, requirePermission } from '../middleware/auth.js';
 import { runKeepAlive } from '../services/keep-alive.js';
-import { logActivity } from '../services/logger.js';
+import { logActivity, logSystem } from '../services/logger.js';
+import { shareFolder, ensureAccountFolderAccess } from '../services/google-drive.js';
 
 const settings = new Hono();
 
@@ -29,6 +30,30 @@ settings.put('/', async (c) => {
   for (const [key, value] of Object.entries(body)) {
     await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind(key, String(value)).run();
   }
+
+  // Auto-share folder when shared_folder_id is updated
+  if (body.shared_folder_id) {
+    const folderId = body.shared_folder_id;
+    const primary = await db.prepare('SELECT id FROM accounts WHERE is_primary = 1').first();
+    if (primary) {
+      // Validate the folder exists and primary can access it
+      const folderValid = await ensureAccountFolderAccess(c.env, db, primary.id, folderId);
+      if (!folderValid) {
+        return c.json({ error: 'Shared folder not found or inaccessible. Verify the folder ID is correct and the primary account owns it.' }, 400);
+      }
+
+      const { results: nonPrimary } = await db.prepare('SELECT id, email FROM accounts WHERE is_primary = 0').all();
+      for (const acc of nonPrimary) {
+        try {
+          await shareFolder(c.env, db, primary.id, folderId, acc.email);
+        } catch {}
+      }
+      if (nonPrimary.length > 0) {
+        await logSystem(db, 'info', 'Auto-shared folder to all accounts', `folder: ${folderId}, accounts: ${nonPrimary.length}`);
+      }
+    }
+  }
+
   return c.json({ success: true });
 });
 

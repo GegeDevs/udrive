@@ -1,14 +1,14 @@
 import { Hono } from 'hono';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { selectAccount } from '../services/account-selector.js';
-import { logActivity } from '../services/logger.js';
+import { logActivity, logSystem } from '../services/logger.js';
 import * as drive from '../services/google-drive.js';
 
 const files = new Hono();
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
-const MAX_SCAN_DEPTH = 10;  // Increased for deeper folders
-const QUEUE_THRESHOLD = 10;  // Trigger queue if >10 items (lowered to avoid subrequest limit)
-const MAX_SCAN_FOR_QUEUE = 50;  // Max items to scan before sending to queue (lowered for safety)
+const MAX_SCAN_DEPTH = 10;
+const SYNC_FOLDER_DELETE_THRESHOLD = 100;
+const MAX_SYNC_FOLDER_SCAN = 500;
 
 async function getSharedFolderId(db) {
   const row = await db.prepare("SELECT value FROM settings WHERE key = 'shared_folder_id'").first();
@@ -54,10 +54,9 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
     };
   }
 
-  // Check if we've scanned too many items for sync processing
-  if (totalScanned.count > MAX_SCAN_FOR_QUEUE) {
+  if (totalScanned.count > MAX_SYNC_FOLDER_SCAN) {
     return {
-      error: `Maximum scan limit (${MAX_SCAN_FOR_QUEUE}) exceeded. Sending partial scan to queue.`,
+      error: `Maximum scan limit (${MAX_SYNC_FOLDER_SCAN}) exceeded for synchronous deletion.`,
       tooLarge: true,
       scannedSoFar: totalScanned.count,
       files: allFiles,
@@ -66,13 +65,12 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
   }
 
   try {
-    // Quick count first to decide whether to continue or queue immediately
+    // Quick count first to decide whether sync deletion can safely continue.
     const quickCount = await drive.quickCountFiles(c.env, db, rootAccountId, rootFolderId, 1);
 
-    // If folder has many items (>QUEUE_THRESHOLD), skip full scan and queue immediately
-    if (quickCount.count > QUEUE_THRESHOLD || quickCount.hasMore) {
+    if (quickCount.count > SYNC_FOLDER_DELETE_THRESHOLD || quickCount.hasMore) {
       return {
-        error: `Folder contains ${quickCount.count}${quickCount.hasMore ? '+' : ''} items. Enqueuing for background processing without full scan.`,
+        error: `Folder contains ${quickCount.count}${quickCount.hasMore ? '+' : ''} items, which is too large for synchronous deletion.`,
         tooLarge: true,
         skipScan: true,
         files: [],
@@ -86,12 +84,8 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
 
     totalScanned.count += children.length;
 
-    // Continue scanning but mark as tooLarge if exceeds threshold
-    const shouldQueue = totalScanned.count > QUEUE_THRESHOLD;
-
     // Stop scanning if we hit the hard limit
-    if (totalScanned.count > MAX_SCAN_FOR_QUEUE) {
-      // Return what we've scanned so far for queue processing
+    if (totalScanned.count > MAX_SYNC_FOLDER_SCAN) {
       const childrenWithOwners = [];
       for (const child of children) {
         const childAccountId = await resolveFileOwnerAccountId(c, db, child.id);
@@ -119,7 +113,7 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
       }
 
       return {
-        error: `Folder contains ${totalScanned.count}+ items. Enqueuing for background processing.`,
+        error: `Folder contains ${totalScanned.count}+ items, which is too large for synchronous deletion.`,
         tooLarge: true,
         files: allFiles,
         folders: allFolders
@@ -137,7 +131,7 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
 
     for (const child of childrenWithOwners) {
       if (child.mimeType !== FOLDER_MIME) {
-        scannedFiles.push({
+        allFiles.push({
           id: child.id,
           name: child.name,
           mimeType: child.mimeType,
@@ -146,12 +140,10 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
         });
       }
     }
-
-    allFiles.push(...scannedFiles);
 
     for (const child of childrenWithOwners) {
       if (child.mimeType === FOLDER_MIME) {
-        scannedFolders.push({
+        allFolders.push({
           id: child.id,
           name: child.name,
           mimeType: child.mimeType,
@@ -159,20 +151,14 @@ async function scanFolderTree(c, db, rootFolderId, rootAccountId, depth = 0, tot
           accountId: child.accountId
         });
 
-        allFolders.push(...scannedFolders);
-
         const nested = await scanFolderTree(c, db, child.id, child.accountId, depth + 1, totalScanned, allFiles, allFolders);
         if (nested.error) return nested;
-
-        scannedFiles.push(...nested.files);
-        scannedFolders.push(...nested.folders);
       }
     }
 
-    // Check if total items exceed queue threshold after scanning
-    if (totalScanned.count > QUEUE_THRESHOLD) {
+    if (totalScanned.count > SYNC_FOLDER_DELETE_THRESHOLD) {
       return {
-        error: `Folder contains ${totalScanned.count} items. Enqueuing for background processing.`,
+        error: `Folder contains ${totalScanned.count} items, which is too large for synchronous deletion.`,
         tooLarge: true,
         files: allFiles,
         folders: allFolders
@@ -321,6 +307,13 @@ files.post('/upload', async (c) => {
   const buffer = await file.arrayBuffer();
   const account = await selectAccount(db, buffer.byteLength);
   if (!account) return c.json({ error: 'Insufficient storage across all accounts' }, 507);
+
+  // Ensure the selected account has access to the shared folder
+  const hasAccess = await drive.ensureAccountFolderAccess(c.env, db, account.id, folderId);
+  if (!hasAccess) {
+    await logSystem(db, 'error', `Upload failed: account ${account.email} cannot access shared folder`, `file: ${file.name}, folder: ${folderId}`);
+    return c.json({ error: 'Shared folder not found or account has no write access. Check Settings > Shared Folder ID.' }, 500);
+  }
 
   const result = await drive.uploadFile(c.env, db, account.id, folderId, buffer, { name: file.name, type: file.type });
 
@@ -555,53 +548,12 @@ files.delete('/:fileId', async (c) => {
       const scannedItems = await scanFolderTree(c, db, fileId, accountId, 0, totalScanned);
 
       if (scannedItems.error) {
-        // If folder too large or skipScan, enqueue to background queue
         if (scannedItems.tooLarge || scannedItems.skipScan) {
-          // Check if DELETE_QUEUE is available (Cloudflare Workers only)
-          console.log('DELETE_QUEUE available:', !!c.env.DELETE_QUEUE);
-          if (c.env.DELETE_QUEUE) {
-            try {
-              // Send the scanned items to queue
-              // If skipScan=true, files/folders arrays will be empty and queue consumer will handle scanning
-              await c.env.DELETE_QUEUE.send({
-                folderId: fileId,
-                folderName: fileInfo.name,
-                accountId: accountId,
-                userId: user.id,
-                username: user.username,
-                // Send pre-scanned items (empty if skipScan=true)
-                files: scannedItems.files || [],
-                folders: scannedItems.folders || [],
-                skipScan: scannedItems.skipScan || false
-              });
-
-              console.log('Job enqueued for folder:', fileInfo.name, scannedItems.skipScan ? '(will scan in queue)' : '(pre-scanned)');
-
-              await logActivity(db, user.id, user.username, 'delete_queued', `${fileInfo.name || fileId} (queued for background deletion)`);
-
-              return c.json({
-                success: true,
-                queued: true,
-                message: 'Folder is large. Deletion is processing in background. This may take several minutes.',
-                folderName: fileInfo.name
-              });
-            } catch (queueError) {
-              console.error('Queue send error:', queueError);
-              // Fall through to guidance
-            }
-          } else {
-            console.log('DELETE_QUEUE not available, falling back to guidance');
-          }
-
-          // Fallback: return guidance to delete subfolders
-          if (scannedItems.subfolders) {
-            return c.json({
-              error: scannedItems.error,
-              tooLarge: true,
-              suggestion: scannedItems.suggestion,
-              subfolders: scannedItems.subfolders
-            }, 400);
-          }
+          return c.json({
+            error: scannedItems.error,
+            tooLarge: true,
+            suggestion: 'This folder is too large for synchronous deletion in Docker/native mode. Delete smaller subfolders first, then retry this folder.'
+          }, 400);
         }
 
         return c.json({ error: scannedItems.error }, 500);

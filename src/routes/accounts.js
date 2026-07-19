@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { getStorageQuota, shareFolder, cleanAllFiles } from '../services/google-drive.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
-import { logActivity } from '../services/logger.js';
+import { logActivity, logSystem } from '../services/logger.js';
 
 const accounts = new Hono();
 
@@ -136,7 +136,7 @@ accounts.post('/clean-all', async (c) => {
     return c.json({ error: 'Invalid confirmation' }, 400);
   }
 
-  const { results } = await db.prepare('SELECT id, email FROM accounts ORDER BY is_primary DESC, created_at ASC').all();
+  const { results } = await db.prepare('SELECT id, email FROM accounts WHERE is_primary = 0 ORDER BY created_at ASC').all();
   let accountsProcessed = 0;
   let totalDeleted = 0;
   let totalFailed = 0;
@@ -257,6 +257,19 @@ accounts.post('/:id/primary', async (c) => {
   const id = c.req.param('id');
   await db.prepare('UPDATE accounts SET is_primary = 0').run();
   await db.prepare('UPDATE accounts SET is_primary = 1 WHERE id = ?').bind(id).run();
+
+  // Auto-share shared folder from new primary to all other accounts
+  const folderRow = await db.prepare("SELECT value FROM settings WHERE key = 'shared_folder_id'").first();
+  if (folderRow?.value) {
+    const { results: nonPrimary } = await db.prepare('SELECT id, email FROM accounts WHERE is_primary = 0').all();
+    for (const acc of nonPrimary) {
+      try { await shareFolder(c.env, db, parseInt(id), folderRow.value, acc.email); } catch {}
+    }
+    if (nonPrimary.length > 0) {
+      await logSystem(db, 'info', 'Auto-shared folder from new primary', `primary: ${id}, folder: ${folderRow.value}, accounts: ${nonPrimary.length}`);
+    }
+  }
+
   return c.json({ success: true });
 });
 
