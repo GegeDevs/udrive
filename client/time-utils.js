@@ -8,6 +8,12 @@ export async function loadTimeSettings() {
   } catch {}
 }
 
+// Update the cached settings immediately (e.g. after the user changes the
+// time format or timezone) so the whole app picks it up without a reload.
+export function setCachedTimeSettings(settings) {
+  cachedSettings = settings;
+}
+
 export function getTimeFormat() {
   return cachedSettings?.time_format || '24';
 }

@@ -3,7 +3,8 @@ import { showToast } from '../components/toast.js';
 import { setTheme, getTheme } from '../theme.js';
 import { showLogoutModal } from '../components/logout-modal.js';
 import { hasPermission } from '../auth-state.js';
-import { formatDateTime } from '../time-utils.js';
+import { formatDateTime, setCachedTimeSettings, loadTimeSettings } from '../time-utils.js';
+import { updateLastDeployTime } from '../update-timestamp.js';
 
 // Auto-save helpers: text inputs are saved after a debounce (and immediately
 // on blur/Enter via the change event); checkboxes/selects save on change.
@@ -258,7 +259,9 @@ export function renderSettingsPage() {
     btn.addEventListener('click', async () => {
       try {
         await api('/api/settings', { method: 'PUT', body: JSON.stringify({ time_format: btn.dataset.format }) });
+        await loadTimeSettings(); // refresh cache so the header/app update now
         showToast(`Time format set to ${btn.dataset.format}-hour`, 'success');
+        updateLastDeployTime();
         renderSettingsPage();
       } catch (err) {
         showToast(err.message, 'error');
@@ -318,7 +321,15 @@ export function renderSettingsPage() {
 
   const tzSelect = main.querySelector('#input-timezone');
   if (tzSelect) {
-    tzSelect.addEventListener('change', () => saveSettings({ timezone: tzSelect.value }, `Timezone set to ${tzSelect.value}`));
+    tzSelect.addEventListener('change', async () => {
+      try {
+        await saveSettings({ timezone: tzSelect.value }, `Timezone set to ${tzSelect.value}`);
+        await loadTimeSettings(); // refresh cache so the whole app updates
+        updateLastDeployTime();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
   }
 
   main.querySelector('#toggle-activity')?.addEventListener('change', async (e) => {
@@ -450,6 +461,9 @@ export function renderSettingsPage() {
 async function loadSettings() {
   try {
     const settings = await api('/api/settings');
+    // Keep the shared time-utils cache in sync so the whole app (header,
+    // logs, activity, etc.) uses the current timezone/time format right away.
+    setCachedTimeSettings(settings);
     const input = document.getElementById('input-folder-id');
     if (input && settings.shared_folder_id) {
       input.value = settings.shared_folder_id;
