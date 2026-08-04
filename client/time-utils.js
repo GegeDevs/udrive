@@ -16,9 +16,19 @@ export function getTimezone() {
   return cachedSettings?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
+// SQLite datetime('now') stores UTC as "YYYY-MM-DD HH:MM:SS" with no
+// timezone marker. JS Date would otherwise read that as LOCAL time and
+// shift every timestamp. Normalize it to an ISO string with 'Z' (UTC).
+export function parseDbDate(dateStr) {
+  if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateStr)) {
+    return new Date(dateStr.replace(' ', 'T') + 'Z');
+  }
+  return new Date(dateStr);
+}
+
 export function formatDateTime(dateStr) {
   if (!dateStr) return '—';
-  const d = new Date(dateStr);
+  const d = parseDbDate(dateStr);
   const tz = getTimezone();
   const hour12 = getTimeFormat() === '12';
 
@@ -28,7 +38,7 @@ export function formatDateTime(dateStr) {
 
 export function formatDate(dateStr) {
   if (!dateStr) return '—';
-  const d = new Date(dateStr);
+  const d = parseDbDate(dateStr);
   const tz = getTimezone();
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: tz });
 }
@@ -36,8 +46,8 @@ export function formatDate(dateStr) {
 export function formatTimeAgo(dateStr) {
   if (!dateStr) return '—';
 
-  // Parse UTC time from database
-  const then = new Date(dateStr + 'Z'); // Add Z to ensure UTC parsing
+  // Parse UTC time from database (SQLite stores naive UTC strings)
+  const then = parseDbDate(dateStr);
   const now = new Date();
   const seconds = Math.floor((now - then) / 1000);
 

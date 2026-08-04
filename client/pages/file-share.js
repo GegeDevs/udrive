@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { hasPermission } from '../auth-state.js';
-import { formatDateTime } from '../time-utils.js';
+import { formatDateTime, parseDbDate } from '../time-utils.js';
 import { generateQRCode } from '../qr.js';
 
 let activeTab = 'shares';
@@ -219,7 +219,7 @@ async function renderSharesTab(container) {
 
 function createShareRow(share) {
   const canManage = hasPermission('share:manage');
-  const isExpired = new Date(share.expiresAt) < new Date();
+  const isExpired = parseDbDate(share.expiresAt) < new Date();
   const tr = document.createElement('tr');
   tr.className = 'border-b border-gray-100 dark:border-gray-800';
   tr.dataset.shareId = share.shareId;

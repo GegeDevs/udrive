@@ -1,5 +1,6 @@
 import { initTheme } from '../theme.js';
 import { generateQRCode } from '../qr.js';
+import { parseDbDate } from '../time-utils.js';
 
 function formatFileSize(bytes) {
   if (bytes === 0) return '0 B';
@@ -366,7 +367,7 @@ async function renderUploadPage(main) {
           <input type="text" readonly value="${link}" class="flex-1 px-2 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs">
           <button id="share-modal-copy" class="px-3 py-1.5 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">Copy</button>
         </div>
-        <p class="text-xs text-gray-500 text-center mt-2">Expires: ${new Date(expiresAt).toLocaleDateString()}</p>
+        <p class="text-xs text-gray-500 text-center mt-2">Expires: ${parseDbDate(expiresAt).toLocaleDateString()}</p>
       </div>
     `;
     document.body.appendChild(modal);
@@ -423,7 +424,7 @@ async function renderDownloadPage(main, shareId) {
     return;
   }
 
-  const expiresDate = new Date(fileInfo.expiresAt).toLocaleDateString();
+  const expiresDate = parseDbDate(fileInfo.expiresAt).toLocaleDateString();
 
   content.innerHTML = `
     <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg text-left">
