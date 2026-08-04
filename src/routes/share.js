@@ -4,6 +4,7 @@ import { selectShareAccount } from '../services/account-selector.js';
 import { hashPassword, verifyPassword } from '../services/password.js';
 import { logSystem } from '../services/logger.js';
 import { cleanupExpiredShares } from '../services/share-cleanup.js';
+import { rescheduleShareCleanupScheduler } from '../services/share-cleanup-scheduler.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { addClient, removeClient, broadcast } from '../services/share-events.js';
 
@@ -405,6 +406,11 @@ shareAdmin.put('/settings', async (c) => {
     if (allowed.includes(key)) {
       await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind(key, String(value)).run();
     }
+  }
+
+  // Reschedule the cleanup interval immediately when it changes (no restart)
+  if (body.share_cleanup_interval_minutes !== undefined) {
+    await rescheduleShareCleanupScheduler();
   }
 
   return c.json({ success: true });
