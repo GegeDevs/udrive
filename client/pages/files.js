@@ -6,7 +6,7 @@ import { showToast } from '../components/toast.js';
 import { addToUploadQueue, onUploadComplete, downloadBackground, downloadViaBrowser, addTransferOwnership } from '../components/transfer-panel.js';
 import { renderSidebar } from '../components/sidebar.js';
 import { hasPermission } from '../auth-state.js';
-import { formatDate } from '../time-utils.js';
+import { formatDate, formatDateTime } from '../time-utils.js';
 
 let folderStack = [];
 let currentFiles = [];
@@ -818,11 +818,11 @@ async function showFileInfo(fileId) {
           </div>
           <div>
             <p class="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">Created</p>
-            <p class="mt-0.5">${formatDate(info.createdTime)}</p>
+            <p class="mt-0.5">${formatDateTime(info.createdTime)}</p>
           </div>
           <div>
             <p class="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">Modified</p>
-            <p class="mt-0.5">${formatDate(info.modifiedTime)}</p>
+            <p class="mt-0.5">${formatDateTime(info.modifiedTime)}</p>
           </div>
           <div>
             <p class="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">Uploader</p>
