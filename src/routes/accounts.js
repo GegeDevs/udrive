@@ -162,28 +162,54 @@ accounts.post('/clean-all', async (c) => {
   const allErrors = [];
   const accountsDetail = [];
 
-  for (const acc of accounts) {
-    const isOwner = acc.id === ownerAccountId;
+  const cleanAccount = async (acc, isOwner) => {
+    const result = isOwner
+      ? await cleanSharedFolderContents(c.env, db, acc.id, sharedFolderId)
+      : await cleanAllFiles(c.env, db, acc.id);
+    // Refresh storage quota
     try {
-      const result = isOwner
-        ? await cleanSharedFolderContents(c.env, db, acc.id, sharedFolderId)
-        : await cleanAllFiles(c.env, db, acc.id);
-      totalDeleted += result.deleted;
-      totalFailed += result.failed;
-      allErrors.push(...result.errors);
-      accountsDetail.push({ accountId: acc.id, email: acc.email, mode: isOwner ? 'shared-folder-only' : 'full', deleted: result.deleted, failed: result.failed });
+      const quota = await getStorageQuota(c.env, db, acc.id);
+      await db.prepare("UPDATE accounts SET storage_limit = ?, storage_used = ?, file_count = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(quota.limit, quota.used, quota.fileCount, acc.id).run();
+    } catch {}
+    return result;
+  };
 
-      // Refresh storage quota
-      try {
-        const quota = await getStorageQuota(c.env, db, acc.id);
-        await db.prepare("UPDATE accounts SET storage_limit = ?, storage_used = ?, file_count = ?, updated_at = datetime('now') WHERE id = ?")
-          .bind(quota.limit, quota.used, quota.fileCount, acc.id).run();
-      } catch {}
+  const record = (acc, isOwner, result) => {
+    totalDeleted += result.deleted;
+    totalFailed += result.failed;
+    allErrors.push(...result.errors);
+    accountsDetail.push({ accountId: acc.id, email: acc.email, mode: isOwner ? 'shared-folder-only' : 'full', deleted: result.deleted, failed: result.failed });
+  };
+
+  const recordError = (acc, isOwner, message) => {
+    totalFailed++;
+    allErrors.push({ accountId: acc.id, error: message });
+    accountsDetail.push({ accountId: acc.id, email: acc.email, mode: isOwner ? 'shared-folder-only' : 'full', deleted: 0, failed: 1 });
+  };
+
+  // 1) The shared folder owner is cleaned FIRST (sequential, folder-scoped)
+  const ownerAccount = accounts.find(a => a.id === ownerAccountId) || null;
+  if (ownerAccount) {
+    try {
+      record(ownerAccount, true, await cleanAccount(ownerAccount, true));
     } catch (e) {
-      totalFailed++;
-      allErrors.push({ accountId: acc.id, error: e.message });
-      accountsDetail.push({ accountId: acc.id, email: acc.email, mode: isOwner ? 'shared-folder-only' : 'full', deleted: 0, failed: 1 });
+      recordError(ownerAccount, true, e.message);
     }
+  }
+
+  // 2) Every other account is wiped in parallel
+  const rest = accounts.filter(a => a.id !== ownerAccountId);
+  const results = await Promise.all(rest.map(async (acc) => {
+    try {
+      return { acc, ok: true, result: await cleanAccount(acc, false) };
+    } catch (e) {
+      return { acc, ok: false, error: e.message };
+    }
+  }));
+  for (const r of results) {
+    if (r.ok) record(r.acc, false, r.result);
+    else recordError(r.acc, false, r.error);
   }
 
   await logActivity(db, user.id, user.username, 'clean_all', `owner: ${ownerAcc?.email || 'unknown'}, ${totalDeleted} deleted, ${totalFailed} failed`);

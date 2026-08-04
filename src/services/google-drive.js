@@ -335,25 +335,28 @@ export async function getThumbnail(env, db, accountId, fileId, size = 200) {
 }
 
 // Find which configured account owns the shared folder by reading the folder's
-// metadata through each account's token. Returns the account id, or null when
-// the folder cannot be read or its owner is not one of the configured accounts.
+// metadata through each account's token (all checked in parallel). Returns the
+// account id, or null when the folder cannot be read or its owner is not one
+// of the configured accounts.
 export async function findSharedFolderOwner(env, db, folderId) {
   const { results: accounts } = await db.prepare('SELECT id, email FROM accounts').all();
-  for (const acc of accounts) {
+  const checks = accounts.map(async (acc) => {
     try {
       const headers = await getAuthHeaders(env, db, acc.id);
       const url = `${DRIVE_API}/files/${encodeURIComponent(folderId)}?fields=owners(emailAddress)&supportsAllDrives=true`;
       const res = await fetch(url, { headers });
-      if (!res.ok) continue;
+      if (!res.ok) return null;
       const data = await res.json();
       const ownerEmail = data.owners?.[0]?.emailAddress;
-      if (ownerEmail) {
-        const owner = accounts.find(a => a.email === ownerEmail);
-        if (owner) return owner.id;
-      }
-    } catch {}
-  }
-  return null;
+      if (!ownerEmail) return null;
+      const owner = accounts.find(a => a.email === ownerEmail);
+      return owner ? owner.id : null;
+    } catch {
+      return null;
+    }
+  });
+  const results = await Promise.all(checks);
+  return results.find(id => id !== null) ?? null;
 }
 
 // Delete only the files inside the shared folder (direct children, including
