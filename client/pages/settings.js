@@ -3,6 +3,7 @@ import { showToast } from '../components/toast.js';
 import { setTheme, getTheme } from '../theme.js';
 import { showLogoutModal } from '../components/logout-modal.js';
 import { hasPermission } from '../auth-state.js';
+import { formatDateTime } from '../time-utils.js';
 
 // Auto-save helpers: text inputs are saved after a debounce (and immediately
 // on blur/Enter via the change event); checkboxes/selects save on change.
@@ -460,8 +461,7 @@ async function loadSettings() {
     }
     const lastEl = document.getElementById('keepalive-last');
     if (lastEl && settings.last_keepalive) {
-      const d = new Date(settings.last_keepalive);
-      lastEl.textContent = `Last run: ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+      lastEl.textContent = `Last run: ${formatDateTime(settings.last_keepalive)}`;
     }
     const activityToggle = document.getElementById('toggle-activity');
     if (activityToggle) {

@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { hasPermission } from '../auth-state.js';
+import { formatDate } from '../time-utils.js';
 
 function getFileIcon(mimeType) {
   if (mimeType === 'application/vnd.google-apps.folder') return 'folder';
@@ -11,12 +12,6 @@ function getFileIcon(mimeType) {
   if (mimeType?.includes('spreadsheet') || mimeType?.includes('excel')) return 'table_chart';
   if (mimeType?.includes('document') || mimeType?.includes('word')) return 'description';
   return 'insert_drive_file';
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function formatFileSize(bytes) {

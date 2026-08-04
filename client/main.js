@@ -60,6 +60,8 @@ async function initApp() {
 
     setCurrentUser(user);
     await loadTimeSettings();
+    // Re-render so the deploy timestamp follows the settings timezone/format
+    updateLastDeployTime();
 
     renderSidebar();
     initSidebarToggle();
