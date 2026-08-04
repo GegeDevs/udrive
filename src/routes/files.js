@@ -248,15 +248,20 @@ files.get('/trash/list', async (c) => {
 
   const db = c.get("db");
   const { results: accounts } = await db.prepare('SELECT id, email, display_name FROM accounts').all();
-  const allTrash = [];
 
-  for (const acc of accounts) {
-    try {
-      const trashed = await drive.listTrash(c.env, db, acc.id);
-      for (const file of trashed) {
-        allTrash.push({ ...file, ownerEmail: acc.email, ownerName: acc.display_name, accountId: acc.id });
-      }
-    } catch {}
+  // Query all accounts in parallel to speed up the scan
+  const settled = await Promise.allSettled(accounts.map(acc =>
+    drive.listTrash(c.env, db, acc.id)
+      .then(trashed => ({ acc, trashed }))
+  ));
+
+  const allTrash = [];
+  for (const s of settled) {
+    if (s.status !== 'fulfilled') continue;
+    const { acc, trashed } = s.value;
+    for (const file of trashed) {
+      allTrash.push({ ...file, ownerEmail: acc.email, ownerName: acc.display_name, accountId: acc.id });
+    }
   }
 
   allTrash.sort((a, b) => new Date(b.trashedTime || 0) - new Date(a.trashedTime || 0));
