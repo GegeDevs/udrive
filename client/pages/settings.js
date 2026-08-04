@@ -104,6 +104,7 @@ export function renderSettingsPage() {
                 <label class="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" value="sun" class="keepalive-day-cb"> Sun</label>
               </div>
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Keep-alive runs on every checked day (e.g. Mon, Wed, Fri). Leave all unchecked to disable.</p>
+              <button id="btn-save-keepalive" class="btn-primary text-sm mt-2">Save</button>
             </div>
             <div class="flex items-center gap-3">
               <button id="btn-run-keepalive" class="btn-secondary text-sm">
