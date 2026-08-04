@@ -6,7 +6,7 @@ import { showToast } from '../components/toast.js';
 import { addToUploadQueue, onUploadComplete, downloadBackground, downloadViaBrowser, addTransferOwnership } from '../components/transfer-panel.js';
 import { renderSidebar } from '../components/sidebar.js';
 import { hasPermission } from '../auth-state.js';
-import { formatDate, formatDateTime } from '../time-utils.js';
+import { formatDateTime } from '../time-utils.js';
 
 let folderStack = [];
 let currentFiles = [];
@@ -334,7 +334,7 @@ function renderListView(container) {
                 <span class="text-sm font-medium truncate max-w-md">${escapeHtml(file.name)}</span>
               </div>
             </td>
-            <td class="py-2 text-sm text-gray-500 dark:text-gray-400 hidden md:table-cell">${formatDate(file.modifiedTime)}</td>
+            <td class="py-2 text-sm text-gray-500 dark:text-gray-400 hidden md:table-cell">${formatDateTime(file.modifiedTime)}</td>
             <td class="py-2 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">${file.mimeType === 'application/vnd.google-apps.folder' ? '—' : formatFileSize(file.size)}</td>
             <td class="py-2 pr-4">
               <button class="file-more-btn p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">

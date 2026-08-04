@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { showToast } from '../components/toast.js';
 import { hasPermission } from '../auth-state.js';
-import { formatDate } from '../time-utils.js';
+import { formatDateTime } from '../time-utils.js';
 
 function getFileIcon(mimeType) {
   if (mimeType === 'application/vnd.google-apps.folder') return 'folder';
@@ -185,7 +185,7 @@ async function loadTrash() {
                   </div>
                 </td>
                 <td class="py-2 text-xs md:text-sm text-gray-500 dark:text-gray-400 truncate max-w-[120px] md:max-w-none">${escapeHtml(file.ownerEmail)}</td>
-                <td class="py-2 text-sm text-gray-500 dark:text-gray-400 hidden md:table-cell">${formatDate(file.trashedTime)}</td>
+                <td class="py-2 text-sm text-gray-500 dark:text-gray-400 hidden md:table-cell">${formatDateTime(file.trashedTime)}</td>
                 <td class="py-2 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">${formatFileSize(file.size)}</td>
                 <td class="py-2 pr-4">
                   <div class="flex items-center gap-1">

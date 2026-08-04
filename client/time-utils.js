@@ -42,13 +42,6 @@ export function formatDateTime(dateStr) {
     d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12, timeZone: tz });
 }
 
-export function formatDate(dateStr) {
-  if (!dateStr) return '—';
-  const d = parseDbDate(dateStr);
-  const tz = getTimezone();
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: tz });
-}
-
 export function formatTimeAgo(dateStr) {
   if (!dateStr) return '—';
 
