@@ -1,6 +1,9 @@
 services:
   udrive:
+    # Build dari source lokal
     build: .
+    # Atau pakai image dari GitHub Container Registry:
+    # image: ghcr.io/gegedevs/udrive:latest
     container_name: udrive
     restart: always
     ports:

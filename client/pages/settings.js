@@ -93,12 +93,25 @@ export function renderSettingsPage() {
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Automatically generate activity on all accounts to prevent Google from deleting inactive accounts. A small file is uploaded and immediately deleted from each account.</p>
           <div class="space-y-3">
             <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Interval (days)</label>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Every N days</label>
               <div class="flex gap-2">
                 <input type="number" id="input-keepalive-days" min="0" class="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="0">
                 <button id="btn-save-keepalive" class="btn-primary text-sm">Save</button>
               </div>
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Set to 0 to disable. Recommended: 14-30 days.</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Or on specific weekdays</label>
+              <div class="flex flex-wrap gap-x-4 gap-y-2" id="keepalive-weekdays">
+                <label class="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" value="mon" class="keepalive-day-cb"> Mon</label>
+                <label class="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" value="tue" class="keepalive-day-cb"> Tue</label>
+                <label class="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" value="wed" class="keepalive-day-cb"> Wed</label>
+                <label class="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" value="thu" class="keepalive-day-cb"> Thu</label>
+                <label class="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" value="fri" class="keepalive-day-cb"> Fri</label>
+                <label class="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" value="sat" class="keepalive-day-cb"> Sat</label>
+                <label class="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" value="sun" class="keepalive-day-cb"> Sun</label>
+              </div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Keep-alive runs on every checked day (e.g. Mon, Wed, Fri). Leave all unchecked to use the interval above.</p>
             </div>
             <div class="flex items-center gap-3">
               <button id="btn-run-keepalive" class="btn-secondary text-sm">
@@ -264,9 +277,20 @@ export function renderSettingsPage() {
 
   main.querySelector('#btn-save-keepalive')?.addEventListener('click', async () => {
     const days = main.querySelector('#input-keepalive-days').value.trim();
+    const checked = [...main.querySelectorAll('.keepalive-day-cb:checked')].map(cb => cb.value);
+    const body = { keepalive_days: checked.join(',') };
+    if (days !== '') body.keepalive_interval_days = days;
+    if (days === '' && checked.length === 0) body.keepalive_interval_days = '0';
     try {
-      await api('/api/settings', { method: 'PUT', body: JSON.stringify({ keepalive_interval_days: days || '0' }) });
-      showToast(parseInt(days) > 0 ? `Keep-alive set to every ${days} day(s)` : 'Keep-alive disabled', 'success');
+      await api('/api/settings', { method: 'PUT', body: JSON.stringify(body) });
+      let msg;
+      if (checked.length > 0) {
+        const names = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+        msg = `Keep-alive set to run every: ${checked.map(d => names[d]).join(', ')}`;
+      } else {
+        msg = parseInt(days) > 0 ? `Keep-alive set to every ${days} day(s)` : 'Keep-alive disabled';
+      }
+      showToast(msg, 'success');
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -371,6 +395,11 @@ async function loadSettings() {
     const keepaliveInput = document.getElementById('input-keepalive-days');
     if (keepaliveInput && settings.keepalive_interval_days) {
       keepaliveInput.value = settings.keepalive_interval_days;
+    }
+    const dayCbs = document.querySelectorAll('.keepalive-day-cb');
+    if (dayCbs.length) {
+      const savedDays = (settings.keepalive_days || '').split(',').filter(Boolean);
+      dayCbs.forEach(cb => { cb.checked = savedDays.includes(cb.value); });
     }
     const lastEl = document.getElementById('keepalive-last');
     if (lastEl && settings.last_keepalive) {

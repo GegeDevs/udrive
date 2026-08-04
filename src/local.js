@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import 'dotenv/config';
 import { createApp } from './app.js';
 import { getDB, initDB } from './db/index.js';
-import { runKeepAlive } from './services/keep-alive.js';
+import { initKeepAliveScheduler } from './services/keep-alive-scheduler.js';
 import { cleanupExpiredShares } from './services/share-cleanup.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -42,14 +42,10 @@ serve({ fetch: app.fetch, port }, () => {
   console.log(`UDrive server running on http://localhost:${port}`);
 });
 
-// Keep-alive scheduler
-const setting = await db.prepare("SELECT value FROM settings WHERE key = 'keepalive_interval_days'").first();
-const days = setting ? parseInt(setting.value) : 0;
-if (days > 0) {
-  const env = { GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET };
-  setInterval(() => runKeepAlive(env, db), days * 24 * 60 * 60 * 1000);
-  console.log(`Keep-alive scheduler started: every ${days} day(s)`);
-}
+// Keep-alive scheduler (dynamic: re-reads interval from DB on every cycle,
+// and is rescheduled immediately when the setting changes via the API)
+const keepAliveEnv = { GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET };
+initKeepAliveScheduler(db, keepAliveEnv);
 
 // Share cleanup scheduler (configurable interval)
 const shareEnv = { GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET };

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { requireAuth, requireMaster, requirePermission } from '../middleware/auth.js';
 import { runKeepAlive } from '../services/keep-alive.js';
+import { rescheduleKeepAliveScheduler } from '../services/keep-alive-scheduler.js';
 import { logActivity, logSystem } from '../services/logger.js';
 import { shareFolder, ensureAccountFolderAccess } from '../services/google-drive.js';
 
@@ -29,6 +30,11 @@ settings.put('/', async (c) => {
   const body = await c.req.json();
   for (const [key, value] of Object.entries(body)) {
     await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind(key, String(value)).run();
+  }
+
+  // Reschedule keep-alive immediately when its schedule changes (no restart needed)
+  if (body.keepalive_interval_days !== undefined || body.keepalive_days !== undefined) {
+    await rescheduleKeepAliveScheduler();
   }
 
   // Auto-share folder when shared_folder_id is updated
