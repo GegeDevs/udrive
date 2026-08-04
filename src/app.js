@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { authenticate } from './middleware/auth.js';
+import { getAppConfig } from './services/app-config.js';
 import authRoutes from './routes/auth.js';
 import accountRoutes from './routes/accounts.js';
 import fileRoutes from './routes/files.js';
@@ -21,6 +22,9 @@ export function createApp(getDB, envVars = null) {
     }
     const db = getDB(c.env);
     c.set('db', db);
+    // Settings-table config (google oauth, turnstile) overrides env vars so
+    // values edited from the Settings page apply without a restart
+    c.env = { ...c.env, ...(await getAppConfig(db)) };
     await next();
   });
 

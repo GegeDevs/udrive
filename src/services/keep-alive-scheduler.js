@@ -1,5 +1,6 @@
 import { runKeepAlive } from './keep-alive.js';
 import { logSystem } from './logger.js';
+import { getGoogleOAuthEnv } from './app-config.js';
 
 const WEEKDAY_KEY = 'keepalive_days';
 // Index aligned with Date.getDay(): 0 = Sunday ... 6 = Saturday
@@ -59,7 +60,10 @@ async function scheduleNext() {
   timer = setTimeout(async () => {
     timer = null;
     try {
-      const results = await runKeepAlive(envRef, dbRef);
+      // Resolve OAuth credentials fresh from the DB (settings win over .env)
+      // so changes made in the Settings page apply without a restart
+      const env = await getGoogleOAuthEnv(dbRef);
+      const results = await runKeepAlive(env, dbRef);
       const ok = results.filter(r => r.success).length;
       console.log(`Keep-alive run completed: ${ok}/${results.length} account(s) OK`);
     } catch (err) {

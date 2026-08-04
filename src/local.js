@@ -8,6 +8,7 @@ import { createApp } from './app.js';
 import { getDB, initDB } from './db/index.js';
 import { initKeepAliveScheduler } from './services/keep-alive-scheduler.js';
 import { cleanupExpiredShares } from './services/share-cleanup.js';
+import { getGoogleOAuthEnv } from './services/app-config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distPath = join(__dirname, '..', 'dist');
@@ -44,19 +45,22 @@ serve({ fetch: app.fetch, port }, () => {
 
 // Keep-alive scheduler (dynamic: re-reads interval from DB on every cycle,
 // and is rescheduled immediately when the setting changes via the API)
-const keepAliveEnv = { GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET };
-initKeepAliveScheduler(db, keepAliveEnv);
+// OAuth credentials are resolved fresh from the DB on every run.
+initKeepAliveScheduler(db, {});
 
-// Share cleanup scheduler (configurable interval)
-const shareEnv = { GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET };
+// Share cleanup scheduler (configurable interval); OAuth credentials resolved
+// fresh from the DB (settings win over .env) on every cycle
 const cleanupSetting = await db.prepare("SELECT value FROM settings WHERE key = 'share_cleanup_interval_minutes'").first();
 const cleanupMinutes = Math.max(1, parseInt(cleanupSetting?.value) || 60);
-cleanupExpiredShares(shareEnv, db)
-  .then(count => { if (count > 0) console.log(`Share cleanup (initial): removed ${count} expired file(s)`); })
-  .catch(() => {});
-setInterval(() => {
-  cleanupExpiredShares(shareEnv, db)
-    .then(count => { if (count > 0) console.log(`Share cleanup (scheduled): removed ${count} expired file(s)`); })
-    .catch(() => {});
-}, cleanupMinutes * 60 * 1000);
+const runShareCleanup = async () => {
+  try {
+    const env = await getGoogleOAuthEnv(db);
+    const count = await cleanupExpiredShares(env, db);
+    if (count > 0) console.log(`Share cleanup: removed ${count} expired file(s)`);
+  } catch (err) {
+    console.error('Share cleanup failed:', err.message);
+  }
+};
+await runShareCleanup();
+setInterval(runShareCleanup, cleanupMinutes * 60 * 1000);
 console.log(`Share cleanup scheduler started: every ${cleanupMinutes} minute(s)`);

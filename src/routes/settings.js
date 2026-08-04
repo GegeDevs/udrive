@@ -4,6 +4,7 @@ import { runKeepAlive } from '../services/keep-alive.js';
 import { rescheduleKeepAliveScheduler } from '../services/keep-alive-scheduler.js';
 import { logActivity, logSystem } from '../services/logger.js';
 import { shareFolder, ensureAccountFolderAccess } from '../services/google-drive.js';
+import { CONFIG_KEYS, invalidateAppConfig } from '../services/app-config.js';
 
 const settings = new Hono();
 
@@ -30,6 +31,12 @@ settings.put('/', async (c) => {
   const body = await c.req.json();
   for (const [key, value] of Object.entries(body)) {
     await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind(key, String(value)).run();
+  }
+
+  // Invalidate cached app config so OAuth/Turnstile settings take effect
+  // immediately (no restart needed)
+  if (Object.keys(body).some(k => k in CONFIG_KEYS)) {
+    invalidateAppConfig();
   }
 
   // Reschedule keep-alive immediately when its weekday schedule changes (no restart needed)

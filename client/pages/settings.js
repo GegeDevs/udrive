@@ -102,6 +102,34 @@ export function renderSettingsPage() {
           </div>
         </section>` : ''}
 
+        ${hasPermission('settings:edit') ? `<section>
+          <h3 class="text-lg font-medium mb-4">Integrations</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Google OAuth and Turnstile credentials. Leave a field empty to use the value from .env / environment variables. Changes apply immediately.</p>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Google Client ID</label>
+              <input type="text" id="input-google-client-id" spellcheck="false" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="From .env">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Google Client Secret</label>
+              <input type="password" id="input-google-client-secret" spellcheck="false" autocomplete="off" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="From .env">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Google Redirect URI</label>
+              <input type="text" id="input-google-redirect-uri" spellcheck="false" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="http://localhost:3000/auth/callback">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Turnstile Site Key</label>
+              <input type="text" id="input-turnstile-site-key" spellcheck="false" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="From .env">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Turnstile Secret Key</label>
+              <input type="password" id="input-turnstile-secret-key" spellcheck="false" autocomplete="off" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="From .env">
+            </div>
+            <button id="btn-save-integrations" class="btn-primary text-sm">Save</button>
+          </div>
+        </section>` : ''}
+
         ${hasPermission('settings:keepalive') ? `<section>
           <h3 class="text-lg font-medium mb-4">Keep-Alive</h3>
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Automatically generate activity on all accounts to prevent Google from deleting inactive accounts. A small file is uploaded and immediately deleted from each account.</p>
@@ -262,6 +290,22 @@ export function renderSettingsPage() {
     try {
       await api('/api/settings', { method: 'PUT', body: JSON.stringify({ account_concurrency: String(n) }) });
       showToast('Concurrency limit saved', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  main.querySelector('#btn-save-integrations')?.addEventListener('click', async () => {
+    const body = {
+      google_client_id: main.querySelector('#input-google-client-id').value.trim(),
+      google_client_secret: main.querySelector('#input-google-client-secret').value.trim(),
+      google_redirect_uri: main.querySelector('#input-google-redirect-uri').value.trim(),
+      turnstile_site_key: main.querySelector('#input-turnstile-site-key').value.trim(),
+      turnstile_secret_key: main.querySelector('#input-turnstile-secret-key').value.trim()
+    };
+    try {
+      await api('/api/settings', { method: 'PUT', body: JSON.stringify(body) });
+      showToast('Integration settings saved', 'success');
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -448,6 +492,17 @@ async function loadSettings() {
     const concInput = document.getElementById('input-concurrency');
     if (concInput) {
       concInput.value = settings.account_concurrency || '3';
+    }
+    const integrationFields = [
+      ['input-google-client-id', 'google_client_id'],
+      ['input-google-client-secret', 'google_client_secret'],
+      ['input-google-redirect-uri', 'google_redirect_uri'],
+      ['input-turnstile-site-key', 'turnstile_site_key'],
+      ['input-turnstile-secret-key', 'turnstile_secret_key']
+    ];
+    for (const [id, key] of integrationFields) {
+      const el = document.getElementById(id);
+      if (el && settings[key]) el.value = settings[key];
     }
   } catch (err) {
     // Settings not loaded yet
