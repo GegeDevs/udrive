@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { getStorageQuota, shareFolder, cleanAllFiles } from '../services/google-drive.js';
+import { getStorageQuota, shareFolder, cleanAllFiles, findSharedFolderOwner, cleanSharedFolderContents } from '../services/google-drive.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { logActivity, logSystem } from '../services/logger.js';
 
@@ -136,19 +136,42 @@ accounts.post('/clean-all', async (c) => {
     return c.json({ error: 'Invalid confirmation' }, 400);
   }
 
-  const { results } = await db.prepare('SELECT id, email FROM accounts WHERE is_primary = 0 ORDER BY created_at ASC').all();
-  let accountsProcessed = 0;
+  // Scope is based on who owns the shared folder:
+  // - the owner account only has the files INSIDE the shared folder deleted
+  // - every other account has ALL of its files deleted
+  const folderRow = await db.prepare("SELECT value FROM settings WHERE key = 'shared_folder_id'").first();
+  const sharedFolderId = folderRow?.value?.trim();
+  if (!sharedFolderId) {
+    return c.json({ error: 'Shared folder ID is not set. Configure it in Settings first.' }, 400);
+  }
+
+  // Find the account that owns the shared folder; fall back to the primary
+  // account when it cannot be determined so its personal files stay safe.
+  let ownerAccountId = await findSharedFolderOwner(c.env, db, sharedFolderId);
+  if (!ownerAccountId) {
+    const primary = await db.prepare('SELECT id FROM accounts WHERE is_primary = 1').first();
+    if (primary) ownerAccountId = primary.id;
+  }
+  const ownerAcc = ownerAccountId
+    ? await db.prepare('SELECT email FROM accounts WHERE id = ?').bind(ownerAccountId).first()
+    : null;
+
+  const { results: accounts } = await db.prepare('SELECT id, email FROM accounts ORDER BY created_at ASC').all();
   let totalDeleted = 0;
   let totalFailed = 0;
   const allErrors = [];
+  const accountsDetail = [];
 
-  for (const acc of results) {
-    accountsProcessed++;
+  for (const acc of accounts) {
+    const isOwner = acc.id === ownerAccountId;
     try {
-      const result = await cleanAllFiles(c.env, db, acc.id);
+      const result = isOwner
+        ? await cleanSharedFolderContents(c.env, db, acc.id, sharedFolderId)
+        : await cleanAllFiles(c.env, db, acc.id);
       totalDeleted += result.deleted;
       totalFailed += result.failed;
       allErrors.push(...result.errors);
+      accountsDetail.push({ accountId: acc.id, email: acc.email, mode: isOwner ? 'shared-folder-only' : 'full', deleted: result.deleted, failed: result.failed });
 
       // Refresh storage quota
       try {
@@ -159,16 +182,21 @@ accounts.post('/clean-all', async (c) => {
     } catch (e) {
       totalFailed++;
       allErrors.push({ accountId: acc.id, error: e.message });
+      accountsDetail.push({ accountId: acc.id, email: acc.email, mode: isOwner ? 'shared-folder-only' : 'full', deleted: 0, failed: 1 });
     }
   }
 
-  await logActivity(db, user.id, user.username, 'clean_all', `${totalDeleted} deleted, ${totalFailed} failed`);
+  await logActivity(db, user.id, user.username, 'clean_all', `owner: ${ownerAcc?.email || 'unknown'}, ${totalDeleted} deleted, ${totalFailed} failed`);
 
   return c.json({
     success: true,
-    accountsProcessed,
+    sharedFolderId,
+    ownerAccountId,
+    ownerEmail: ownerAcc?.email || null,
+    accountsProcessed: accounts.length,
     deleted: totalDeleted,
     failed: totalFailed,
+    accounts: accountsDetail,
     errors: allErrors.slice(0, 10)
   });
 });

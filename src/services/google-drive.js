@@ -334,6 +334,71 @@ export async function getThumbnail(env, db, accountId, fileId, size = 200) {
   };
 }
 
+// Find which configured account owns the shared folder by reading the folder's
+// metadata through each account's token. Returns the account id, or null when
+// the folder cannot be read or its owner is not one of the configured accounts.
+export async function findSharedFolderOwner(env, db, folderId) {
+  const { results: accounts } = await db.prepare('SELECT id, email FROM accounts').all();
+  for (const acc of accounts) {
+    try {
+      const headers = await getAuthHeaders(env, db, acc.id);
+      const url = `${DRIVE_API}/files/${encodeURIComponent(folderId)}?fields=owners(emailAddress)&supportsAllDrives=true`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const ownerEmail = data.owners?.[0]?.emailAddress;
+      if (ownerEmail) {
+        const owner = accounts.find(a => a.email === ownerEmail);
+        if (owner) return owner.id;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+// Delete only the files inside the shared folder (direct children, including
+// trashed ones). The shared folder itself is kept — deleting a child folder
+// removes everything nested inside it.
+export async function cleanSharedFolderContents(env, db, accountId, folderId) {
+  const headers = await getAuthHeaders(env, db, accountId);
+  let deleted = 0;
+  let failed = 0;
+  const errors = [];
+
+  const children = [];
+  for (const trashed of [false, true]) {
+    let pageToken = null;
+    do {
+      const q = encodeURIComponent(`'${folderId}' in parents and trashed = ${trashed}`);
+      const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType)');
+      let url = `${DRIVE_API}/files?q=${q}&fields=${fields}&pageSize=1000`;
+      if (pageToken) url += `&pageToken=${pageToken}`;
+
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        errors.push({ accountId, error: `List failed: ${res.status}` });
+        break;
+      }
+      const data = await res.json();
+      if (data.files) children.push(...data.files);
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+  }
+
+  for (const file of children) {
+    const res = await fetch(`${DRIVE_API}/files/${file.id}`, { method: 'DELETE', headers });
+    if (res.ok || res.status === 404) {
+      deleted++;
+      await db.prepare('DELETE FROM file_owners WHERE file_id = ?').bind(file.id).run();
+    } else {
+      failed++;
+      errors.push({ accountId, fileId: file.id, error: `${res.status}` });
+    }
+  }
+
+  return { deleted, failed, errors };
+}
+
 export async function cleanAllFiles(env, db, accountId) {
   const headers = await getAuthHeaders(env, db, accountId);
   let deleted = 0;

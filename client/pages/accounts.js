@@ -140,11 +140,11 @@ export function renderAccountsPage() {
     const btn = main.querySelector('#btn-clean-all');
     if (btn.disabled) return;
 
-    if (!confirm('Permanently delete ALL files from EVERY configured Google Drive account? This cannot be undone.')) {
+    if (!confirm('Permanently delete files INSIDE the shared folder on the account that owns it, and ALL files on every other account? This cannot be undone.')) {
       return;
     }
 
-    const confirmation = prompt('Type CLEAN ALL to permanently delete all files from every account:');
+    const confirmation = prompt('Type CLEAN ALL to permanently delete the files:');
     if (confirmation !== 'CLEAN ALL') {
       return;
     }
@@ -162,7 +162,7 @@ export function renderAccountsPage() {
       if (result.failed > 0) {
         showToast(`Deleted ${result.deleted} file(s); ${result.failed} failed`, 'error');
       } else {
-        showToast(`Permanently deleted ${result.deleted} file(s)`, 'success');
+        showToast(`Permanently deleted ${result.deleted} file(s)${result.ownerEmail ? ` — folder owner: ${result.ownerEmail}` : ''}`, 'success');
       }
 
       loadAccounts();
