@@ -4,6 +4,22 @@ import { setTheme, getTheme } from '../theme.js';
 import { showLogoutModal } from '../components/logout-modal.js';
 import { hasPermission } from '../auth-state.js';
 
+// Auto-save helpers: text inputs are saved after a debounce (and immediately
+// on blur/Enter via the change event); checkboxes/selects save on change.
+const autosaveTimers = {};
+
+function scheduleAutoSave(id, fn, ms = 800) {
+  clearTimeout(autosaveTimers[id]);
+  autosaveTimers[id] = setTimeout(() => {
+    fn().catch(err => showToast(err.message, 'error'));
+  }, ms);
+}
+
+async function saveSettings(body, msg) {
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify(body) });
+  if (msg) showToast(msg, 'success');
+}
+
 function getTimezoneOptions() {
   const timezones = Intl.supportedValuesOf('timeZone');
   const current = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -16,7 +32,8 @@ export function renderSettingsPage() {
 
   main.innerHTML = `
     <div class="p-3 md:p-6 max-w-2xl">
-      <h2 class="text-xl md:text-2xl font-semibold mb-6">Settings</h2>
+      <h2 class="text-xl md:text-2xl font-semibold mb-2">Settings</h2>
+      <p class="text-xs text-gray-500 dark:text-gray-400 mb-6">Changes are saved automatically.</p>
 
       <div class="space-y-8">
         ${hasPermission('settings:edit') ? `<section>
@@ -25,10 +42,7 @@ export function renderSettingsPage() {
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Shared Folder ID</label>
               <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">The Google Drive folder ID that is shared across all accounts. You can find this in the folder's URL.</p>
-              <div class="flex gap-2">
-                <input type="text" id="input-folder-id" class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="e.g. 1AbC2dEfGhIjKlMnOpQrStUvWxYz">
-                <button id="btn-save-folder" class="btn-primary text-sm">Save</button>
-              </div>
+              <input type="text" id="input-folder-id" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="e.g. 1AbC2dEfGhIjKlMnOpQrStUvWxYz">
             </div>
           </div>
         </section>` : ''}
@@ -55,12 +69,9 @@ export function renderSettingsPage() {
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timezone</label>
-              <div class="flex gap-2">
-                <select id="input-timezone" class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+              <select id="input-timezone" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                   ${getTimezoneOptions()}
                 </select>
-                <button id="btn-save-timezone" class="btn-primary text-sm">Save</button>
-              </div>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Time Format</label>
@@ -81,10 +92,7 @@ export function renderSettingsPage() {
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Average Download Speed (MBps)</label>
             <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Used to calculate expiry time for browser download links.</p>
-            <div class="flex gap-2">
-              <input type="number" id="input-download-speed" min="0.1" step="0.1" class="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="1">
-              <button id="btn-save-download-speed" class="btn-primary text-sm">Save</button>
-            </div>
+            <input type="number" id="input-download-speed" min="0.1" step="0.1" class="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="1">
           </div>
         </section>
 
@@ -94,10 +102,7 @@ export function renderSettingsPage() {
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max Parallel Accounts</label>
               <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">How many accounts are processed at once during Clean All and Trash scanning. Lower this if you hit Google rate limits, raise it for faster operations.</p>
-              <div class="flex gap-2">
-                <input type="number" id="input-concurrency" min="1" max="20" step="1" class="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="3">
-                <button id="btn-save-concurrency" class="btn-primary text-sm">Save</button>
-              </div>
+              <input type="number" id="input-concurrency" min="1" max="20" step="1" class="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="3">
             </div>
           </div>
         </section>` : ''}
@@ -128,7 +133,6 @@ export function renderSettingsPage() {
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Turnstile Secret Key</label>
               <input type="password" id="input-turnstile-secret-key" spellcheck="false" autocomplete="off" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="From .env">
             </div>
-            <button id="btn-save-integrations" class="btn-primary text-sm">Save</button>
           </div>
         </section>` : ''}
 
@@ -149,7 +153,6 @@ export function renderSettingsPage() {
               </div>
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Keep-alive runs on every checked day (e.g. Mon, Wed, Fri). Leave all unchecked to disable.</p>
               <div class="flex items-center gap-3">
-                <button id="btn-save-keepalive" class="btn-primary text-sm">Save</button>
                 <button id="btn-run-keepalive" class="btn-secondary text-sm">
                   <span class="material-icons-outlined text-base">play_arrow</span>
                   Run Now
@@ -262,65 +265,60 @@ export function renderSettingsPage() {
     });
   });
 
-  main.querySelector('#btn-save-folder')?.addEventListener('click', async () => {
-    const folderId = main.querySelector('#input-folder-id').value.trim();
-    try {
-      await api('/api/settings', { method: 'PUT', body: JSON.stringify({ shared_folder_id: folderId }) });
-      showToast('Shared folder ID saved', 'success');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
+  const folderInput = main.querySelector('#input-folder-id');
+  if (folderInput) {
+    const doSave = () => saveSettings({ shared_folder_id: folderInput.value.trim() }, 'Shared folder ID saved');
+    folderInput.addEventListener('input', () => scheduleAutoSave('folder', doSave));
+    folderInput.addEventListener('change', () => { clearTimeout(autosaveTimers.folder); doSave(); });
+  }
 
-  main.querySelector('#btn-save-download-speed')?.addEventListener('click', async () => {
-    const speed = main.querySelector('#input-download-speed').value.trim();
-    try {
-      await api('/api/settings', { method: 'PUT', body: JSON.stringify({ download_speed_mbps: speed || '1' }) });
-      showToast('Download speed saved', 'success');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
-
-  main.querySelector('#btn-save-concurrency')?.addEventListener('click', async () => {
-    const val = main.querySelector('#input-concurrency').value.trim();
-    const n = parseInt(val, 10);
-    if (!Number.isFinite(n) || n < 1 || n > 20) {
-      showToast('Enter a number between 1 and 20', 'error');
-      return;
-    }
-    try {
-      await api('/api/settings', { method: 'PUT', body: JSON.stringify({ account_concurrency: String(n) }) });
-      showToast('Concurrency limit saved', 'success');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
-
-  main.querySelector('#btn-save-integrations')?.addEventListener('click', async () => {
-    const body = {
-      google_client_id: main.querySelector('#input-google-client-id').value.trim(),
-      google_client_secret: main.querySelector('#input-google-client-secret').value.trim(),
-      turnstile_site_key: main.querySelector('#input-turnstile-site-key').value.trim(),
-      turnstile_secret_key: main.querySelector('#input-turnstile-secret-key').value.trim()
+  const speedInput = main.querySelector('#input-download-speed');
+  if (speedInput) {
+    const doSave = () => {
+      const v = speedInput.value.trim();
+      const n = parseFloat(v);
+      if (!Number.isFinite(n) || n <= 0) {
+        showToast('Enter a valid download speed', 'error');
+        return Promise.resolve();
+      }
+      return saveSettings({ download_speed_mbps: v }, 'Download speed saved');
     };
-    try {
-      await api('/api/settings', { method: 'PUT', body: JSON.stringify(body) });
-      showToast('Integration settings saved', 'success');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
+    speedInput.addEventListener('input', () => scheduleAutoSave('speed', doSave));
+    speedInput.addEventListener('change', () => { clearTimeout(autosaveTimers.speed); doSave(); });
+  }
 
-  main.querySelector('#btn-save-timezone')?.addEventListener('click', async () => {
-    const tz = main.querySelector('#input-timezone').value;
-    try {
-      await api('/api/settings', { method: 'PUT', body: JSON.stringify({ timezone: tz }) });
-      showToast(`Timezone set to ${tz}`, 'success');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
+  const concInput = main.querySelector('#input-concurrency');
+  if (concInput) {
+    const doSave = () => {
+      const n = parseInt(concInput.value.trim(), 10);
+      if (!Number.isFinite(n) || n < 1 || n > 20) {
+        showToast('Enter a number between 1 and 20', 'error');
+        return Promise.resolve();
+      }
+      return saveSettings({ account_concurrency: String(n) }, 'Concurrency limit saved');
+    };
+    concInput.addEventListener('input', () => scheduleAutoSave('concurrency', doSave));
+    concInput.addEventListener('change', () => { clearTimeout(autosaveTimers.concurrency); doSave(); });
+  }
+
+  const integrationFields = [
+    ['input-google-client-id', 'google_client_id'],
+    ['input-google-client-secret', 'google_client_secret'],
+    ['input-turnstile-site-key', 'turnstile_site_key'],
+    ['input-turnstile-secret-key', 'turnstile_secret_key']
+  ];
+  for (const [id, key] of integrationFields) {
+    const el = main.querySelector(`#${id}`);
+    if (!el) continue;
+    const doSave = () => saveSettings({ [key]: el.value.trim() }, 'Integration settings saved');
+    el.addEventListener('input', () => scheduleAutoSave(id, doSave, 1000));
+    el.addEventListener('change', () => { clearTimeout(autosaveTimers[id]); doSave(); });
+  }
+
+  const tzSelect = main.querySelector('#input-timezone');
+  if (tzSelect) {
+    tzSelect.addEventListener('change', () => saveSettings({ timezone: tzSelect.value }, `Timezone set to ${tzSelect.value}`));
+  }
 
   main.querySelector('#toggle-activity')?.addEventListener('change', async (e) => {
     try {
@@ -342,22 +340,21 @@ export function renderSettingsPage() {
     }
   });
 
-  main.querySelector('#btn-save-keepalive')?.addEventListener('click', async () => {
-    const checked = [...main.querySelectorAll('.keepalive-day-cb:checked')].map(cb => cb.value);
-    const body = { keepalive_days: checked.join(',') };
-    try {
-      await api('/api/settings', { method: 'PUT', body: JSON.stringify(body) });
-      let msg;
-      if (checked.length > 0) {
-        const names = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
-        msg = `Keep-alive set to run every: ${checked.map(d => names[d]).join(', ')}`;
-      } else {
-        msg = 'Keep-alive disabled';
+  main.querySelectorAll('.keepalive-day-cb').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const checked = [...main.querySelectorAll('.keepalive-day-cb:checked')].map(x => x.value);
+      try {
+        if (checked.length > 0) {
+          const names = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+          await saveSettings({ keepalive_days: checked.join(',') }, `Keep-alive set to run every: ${checked.map(d => names[d]).join(', ')}`);
+        } else {
+          await saveSettings({ keepalive_days: '' }, 'Keep-alive disabled');
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+        cb.checked = !cb.checked;
       }
-      showToast(msg, 'success');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+    });
   });
 
   main.querySelector('#btn-run-keepalive')?.addEventListener('click', async () => {
