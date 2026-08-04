@@ -1,7 +1,6 @@
 import { runKeepAlive } from './keep-alive.js';
 import { logSystem } from './logger.js';
 
-const INTERVAL_KEY = 'keepalive_interval_days';
 const WEEKDAY_KEY = 'keepalive_days';
 // Index aligned with Date.getDay(): 0 = Sunday ... 6 = Saturday
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -33,20 +32,13 @@ export function nextWeekdayDelay(days, from = new Date()) {
   return null;
 }
 
-// Resolve the current schedule from the DB. Weekday list wins over the
-// N-days interval; when neither is active the scheduler is disabled.
+// Resolve the current schedule from the DB. Disabled when no weekday is set.
 async function getNextRun() {
-  const weekdayRow = await dbRef.prepare(`SELECT value FROM settings WHERE key = '${WEEKDAY_KEY}'`).first();
-  const weekdays = parseWeekdays(weekdayRow?.value);
-  if (weekdays.length > 0) {
-    const label = weekdays.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(', ');
-    return { delay: nextWeekdayDelay(weekdays), mode: 'weekday', label: `on ${label}` };
-  }
-
-  const intervalRow = await dbRef.prepare(`SELECT value FROM settings WHERE key = '${INTERVAL_KEY}'`).first();
-  const days = intervalRow ? parseInt(intervalRow.value) : 0;
-  const safeDays = Number.isFinite(days) && days > 0 ? days : 0;
-  return { delay: safeDays > 0 ? safeDays * DAY_MS : 0, mode: 'interval', label: `in ${safeDays} day(s)` };
+  const row = await dbRef.prepare(`SELECT value FROM settings WHERE key = '${WEEKDAY_KEY}'`).first();
+  const weekdays = parseWeekdays(row?.value);
+  if (weekdays.length === 0) return { delay: 0, label: 'disabled' };
+  const label = weekdays.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(', ');
+  return { delay: nextWeekdayDelay(weekdays), label: `on ${label}` };
 }
 
 async function scheduleNext() {
@@ -88,6 +80,6 @@ export function initKeepAliveScheduler(db, env) {
 export async function rescheduleKeepAliveScheduler() {
   if (!dbRef) return; // scheduler not initialized yet (route called outside local.js)
   const run = await getNextRun();
-  await logSystem(dbRef, 'info', 'Keep-alive schedule updated', run.delay ? run.label : 'disabled');
+  await logSystem(dbRef, 'info', 'Keep-alive schedule updated', run.label);
   return scheduleNext();
 }

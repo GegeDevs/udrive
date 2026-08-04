@@ -32,8 +32,8 @@ settings.put('/', async (c) => {
     await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind(key, String(value)).run();
   }
 
-  // Reschedule keep-alive immediately when its schedule changes (no restart needed)
-  if (body.keepalive_interval_days !== undefined || body.keepalive_days !== undefined) {
+  // Reschedule keep-alive immediately when its weekday schedule changes (no restart needed)
+  if (body.keepalive_days !== undefined) {
     await rescheduleKeepAliveScheduler();
   }
 
