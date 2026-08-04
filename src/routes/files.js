@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { selectAccount } from '../services/account-selector.js';
 import { logActivity, logSystem } from '../services/logger.js';
+import { mapWithConcurrency, getConcurrencyLimit } from '../services/concurrency.js';
 import * as drive from '../services/google-drive.js';
 
 const files = new Hono();
@@ -249,16 +250,19 @@ files.get('/trash/list', async (c) => {
   const db = c.get("db");
   const { results: accounts } = await db.prepare('SELECT id, email, display_name FROM accounts').all();
 
-  // Query all accounts in parallel to speed up the scan
-  const settled = await Promise.allSettled(accounts.map(acc =>
-    drive.listTrash(c.env, db, acc.id)
-      .then(trashed => ({ acc, trashed }))
-  ));
+  // Query all accounts with a limited number of parallel workers (configurable
+  // via the account_concurrency setting) to speed up the scan without
+  // hammering Google's rate limits
+  const settled = await mapWithConcurrency(accounts, await getConcurrencyLimit(db), async (acc) => {
+    try {
+      return { acc, trashed: await drive.listTrash(c.env, db, acc.id) };
+    } catch {
+      return { acc, trashed: [] };
+    }
+  });
 
   const allTrash = [];
-  for (const s of settled) {
-    if (s.status !== 'fulfilled') continue;
-    const { acc, trashed } = s.value;
+  for (const { acc, trashed } of settled) {
     for (const file of trashed) {
       allTrash.push({ ...file, ownerEmail: acc.email, ownerName: acc.display_name, accountId: acc.id });
     }

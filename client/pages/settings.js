@@ -88,6 +88,20 @@ export function renderSettingsPage() {
           </div>
         </section>
 
+        ${hasPermission('settings:edit') ? `<section>
+          <h3 class="text-lg font-medium mb-4">Performance</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max Parallel Accounts</label>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">How many accounts are processed at once during Clean All and Trash scanning. Lower this if you hit Google rate limits, raise it for faster operations.</p>
+              <div class="flex gap-2">
+                <input type="number" id="input-concurrency" min="1" max="20" step="1" class="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="3">
+                <button id="btn-save-concurrency" class="btn-primary text-sm">Save</button>
+              </div>
+            </div>
+          </div>
+        </section>` : ''}
+
         ${hasPermission('settings:keepalive') ? `<section>
           <h3 class="text-lg font-medium mb-4">Keep-Alive</h3>
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Automatically generate activity on all accounts to prevent Google from deleting inactive accounts. A small file is uploaded and immediately deleted from each account.</p>
@@ -233,6 +247,21 @@ export function renderSettingsPage() {
     try {
       await api('/api/settings', { method: 'PUT', body: JSON.stringify({ download_speed_mbps: speed || '1' }) });
       showToast('Download speed saved', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  main.querySelector('#btn-save-concurrency')?.addEventListener('click', async () => {
+    const val = main.querySelector('#input-concurrency').value.trim();
+    const n = parseInt(val, 10);
+    if (!Number.isFinite(n) || n < 1 || n > 20) {
+      showToast('Enter a number between 1 and 20', 'error');
+      return;
+    }
+    try {
+      await api('/api/settings', { method: 'PUT', body: JSON.stringify({ account_concurrency: String(n) }) });
+      showToast('Concurrency limit saved', 'success');
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -415,6 +444,10 @@ async function loadSettings() {
     const speedInput = document.getElementById('input-download-speed');
     if (speedInput) {
       speedInput.value = settings.download_speed_mbps || '1';
+    }
+    const concInput = document.getElementById('input-concurrency');
+    if (concInput) {
+      concInput.value = settings.account_concurrency || '3';
     }
   } catch (err) {
     // Settings not loaded yet

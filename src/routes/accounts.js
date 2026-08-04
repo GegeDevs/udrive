@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { getStorageQuota, shareFolder, cleanAllFiles, findSharedFolderOwner, cleanSharedFolderContents } from '../services/google-drive.js';
+import { mapWithConcurrency, getConcurrencyLimit } from '../services/concurrency.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { logActivity, logSystem } from '../services/logger.js';
 
@@ -198,15 +199,16 @@ accounts.post('/clean-all', async (c) => {
     }
   }
 
-  // 2) Every other account is wiped in parallel
+  // 2) Every other account is wiped in parallel, respecting the
+  //    user-configurable concurrency limit from settings
   const rest = accounts.filter(a => a.id !== ownerAccountId);
-  const results = await Promise.all(rest.map(async (acc) => {
+  const results = await mapWithConcurrency(rest, await getConcurrencyLimit(db), async (acc) => {
     try {
       return { acc, ok: true, result: await cleanAccount(acc, false) };
     } catch (e) {
       return { acc, ok: false, error: e.message };
     }
-  }));
+  });
   for (const r of results) {
     if (r.ok) record(r.acc, false, r.result);
     else recordError(r.acc, false, r.error);
