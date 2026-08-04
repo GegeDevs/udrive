@@ -146,6 +146,11 @@ accounts.post('/clean-all', async (c) => {
     return c.json({ error: 'Shared folder ID is not set. Configure it in Settings first.' }, 400);
   }
 
+  // The File Share folder (share_folder_id) is never touched: its folder and
+  // everything inside it are excluded from deletion on every account.
+  const shareFolderRow = await db.prepare("SELECT value FROM settings WHERE key = 'share_folder_id'").first();
+  const shareFolderId = shareFolderRow?.value?.trim() || null;
+
   // Find the account that owns the shared folder; fall back to the primary
   // account when it cannot be determined so its personal files stay safe.
   let ownerAccountId = await findSharedFolderOwner(c.env, db, sharedFolderId);
@@ -165,8 +170,8 @@ accounts.post('/clean-all', async (c) => {
 
   const cleanAccount = async (acc, isOwner) => {
     const result = isOwner
-      ? await cleanSharedFolderContents(c.env, db, acc.id, sharedFolderId)
-      : await cleanAllFiles(c.env, db, acc.id);
+      ? await cleanSharedFolderContents(c.env, db, acc.id, sharedFolderId, shareFolderId)
+      : await cleanAllFiles(c.env, db, acc.id, shareFolderId);
     // Refresh storage quota
     try {
       const quota = await getStorageQuota(c.env, db, acc.id);
@@ -219,6 +224,7 @@ accounts.post('/clean-all', async (c) => {
   return c.json({
     success: true,
     sharedFolderId,
+    shareFolderId,
     ownerAccountId,
     ownerEmail: ownerAcc?.email || null,
     accountsProcessed: accounts.length,

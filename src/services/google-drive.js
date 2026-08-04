@@ -361,8 +361,9 @@ export async function findSharedFolderOwner(env, db, folderId) {
 
 // Delete only the files inside the shared folder (direct children, including
 // trashed ones). The shared folder itself is kept — deleting a child folder
-// removes everything nested inside it.
-export async function cleanSharedFolderContents(env, db, accountId, folderId) {
+// removes everything nested inside it. When excludeFolderId is set (the File
+// Share folder), that folder and anything directly inside it is kept too.
+export async function cleanSharedFolderContents(env, db, accountId, folderId, excludeFolderId) {
   const headers = await getAuthHeaders(env, db, accountId);
   let deleted = 0;
   let failed = 0;
@@ -373,7 +374,7 @@ export async function cleanSharedFolderContents(env, db, accountId, folderId) {
     let pageToken = null;
     do {
       const q = encodeURIComponent(`'${folderId}' in parents and trashed = ${trashed}`);
-      const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType)');
+      const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType,parents)');
       let url = `${DRIVE_API}/files?q=${q}&fields=${fields}&pageSize=1000`;
       if (pageToken) url += `&pageToken=${pageToken}`;
 
@@ -389,6 +390,10 @@ export async function cleanSharedFolderContents(env, db, accountId, folderId) {
   }
 
   for (const file of children) {
+    // Keep the File Share folder itself and anything directly inside it.
+    if (excludeFolderId && (file.id === excludeFolderId || (file.parents || []).includes(excludeFolderId))) {
+      continue;
+    }
     const res = await fetch(`${DRIVE_API}/files/${file.id}`, { method: 'DELETE', headers });
     if (res.ok || res.status === 404) {
       deleted++;
@@ -402,7 +407,7 @@ export async function cleanSharedFolderContents(env, db, accountId, folderId) {
   return { deleted, failed, errors };
 }
 
-export async function cleanAllFiles(env, db, accountId) {
+export async function cleanAllFiles(env, db, accountId, excludeFolderId) {
   const headers = await getAuthHeaders(env, db, accountId);
   let deleted = 0;
   let failed = 0;
@@ -414,7 +419,7 @@ export async function cleanAllFiles(env, db, accountId) {
 
   do {
     const q = encodeURIComponent("'me' in owners");
-    const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType)');
+    const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType,parents)');
     let url = `${DRIVE_API}/files?q=${q}&fields=${fields}&pageSize=1000`;
     if (pageToken) url += `&pageToken=${pageToken}`;
 
@@ -429,9 +434,30 @@ export async function cleanAllFiles(env, db, accountId) {
     pageToken = data.nextPageToken;
   } while (pageToken);
 
-  // Separate non-folders and folders
-  const nonFolders = allFiles.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
-  const folders = allFiles.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+  // Build the exclusion set: the File Share folder plus every folder nested
+  // inside it (fixpoint over parents). Any file whose id or parent is in this
+  // set belongs to the share-folder tree and is kept untouched.
+  const excluded = new Set();
+  if (excludeFolderId) {
+    excluded.add(excludeFolderId);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const f of allFiles) {
+        if (f.mimeType === 'application/vnd.google-apps.folder' && !excluded.has(f.id) &&
+            (f.parents || []).some(p => excluded.has(p))) {
+          excluded.add(f.id);
+          grew = true;
+        }
+      }
+    }
+  }
+  const isExcluded = (f) =>
+    excluded.has(f.id) || (f.parents || []).some(p => excluded.has(p));
+
+  // Separate non-folders and folders (excluding the share-folder tree)
+  const nonFolders = allFiles.filter(f => f.mimeType !== 'application/vnd.google-apps.folder' && !isExcluded(f));
+  const folders = allFiles.filter(f => f.mimeType === 'application/vnd.google-apps.folder' && !isExcluded(f));
 
   // Delete non-folders first
   for (const file of nonFolders) {
