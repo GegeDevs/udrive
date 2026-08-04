@@ -18,12 +18,25 @@ function getUniqueColor(usedColors) {
   return color;
 }
 
+// Build the OAuth redirect URI from the domain the user is currently browsing,
+// so GOOGLE_REDIRECT_URI no longer needs to be configured per deployment.
+// Respects reverse-proxy headers (Caddy/nginx terminate TLS, so the internal
+// scheme would otherwise look like http while the public origin is https).
+function getRedirectUri(c) {
+  const fwdProto = (c.req.header('x-forwarded-proto') || '').split(',')[0].trim();
+  const fwdHost = (c.req.header('x-forwarded-host') || '').split(',')[0].trim();
+  const proto = fwdProto || (c.req.url.startsWith('https://') ? 'https' : 'http');
+  const host = fwdHost || c.req.header('host');
+  if (host) return `${proto}://${host}/auth/callback`;
+  return c.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/callback';
+}
+
 const auth = new Hono();
 
 auth.get('/login', async (c) => {
   const env = c.env;
   const scope = encodeURIComponent('https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile');
-  const url = `https://accounts.google.com/o/oauth2/auth?client_id=${env.GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(env.GOOGLE_REDIRECT_URI)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
+  const url = `https://accounts.google.com/o/oauth2/auth?client_id=${env.GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(getRedirectUri(c))}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
   return c.redirect(url);
 });
 
@@ -41,7 +54,7 @@ auth.get('/callback', async (c) => {
       code,
       client_id: env.GOOGLE_CLIENT_ID,
       client_secret: env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: env.GOOGLE_REDIRECT_URI,
+      redirect_uri: getRedirectUri(c),
       grant_type: 'authorization_code'
     })
   });

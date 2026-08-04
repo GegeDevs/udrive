@@ -7,7 +7,6 @@
 export const CONFIG_KEYS = {
   google_client_id: 'GOOGLE_CLIENT_ID',
   google_client_secret: 'GOOGLE_CLIENT_SECRET',
-  google_redirect_uri: 'GOOGLE_REDIRECT_URI',
   turnstile_site_key: 'TURNSTILE_SITE_KEY',
   turnstile_secret_key: 'TURNSTILE_SECRET_KEY'
 };

@@ -65,12 +65,16 @@ Create `.env`:
 PORT=3000
 GOOGLE_CLIENT_ID=your-client-id
 GOOGLE_CLIENT_SECRET=your-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:3000/auth/callback
 
 # Optional, only needed when enabling captcha on public file share
 TURNSTILE_SITE_KEY=your-site-key
 TURNSTILE_SECRET_KEY=your-secret-key
 ```
+
+The OAuth redirect URI is derived automatically from the domain you use to
+access UDrive (e.g. `https://udrive.example.com/auth/callback`). Make sure
+that exact URI is registered in your Google Cloud Console OAuth settings.
+GOOGLE_REDIRECT_URI is no longer required.
 
 If Turnstile keys are not set, file sharing works without captcha verification.
 
@@ -123,9 +127,11 @@ docker compose down
 | `PORT` | No | Server port, defaults to `3000` |
 | `GOOGLE_CLIENT_ID` | Yes | Google OAuth 2.0 Client ID |
 | `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth 2.0 Client Secret |
-| `GOOGLE_REDIRECT_URI` | Yes | OAuth callback URL, for example `http://localhost:3000/auth/callback` |
 | `TURNSTILE_SITE_KEY` | No | Cloudflare Turnstile site key for public share captcha |
 | `TURNSTILE_SECRET_KEY` | No | Cloudflare Turnstile secret key |
+
+The OAuth redirect URI is derived automatically from the request domain
+(behind a reverse proxy it respects `X-Forwarded-Proto`/`X-Forwarded-Host`).
 
 ## First Run
 

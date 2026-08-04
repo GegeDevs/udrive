@@ -116,7 +116,9 @@ export function renderSettingsPage() {
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Google Redirect URI</label>
-              <input type="text" id="input-google-redirect-uri" spellcheck="false" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" placeholder="http://localhost:3000/auth/callback">
+              <p class="text-xs text-gray-500 dark:text-gray-400">Derived automatically from the domain you are using:</p>
+              <code id="redirect-uri-display" class="block mt-1 px-3 py-2 bg-gray-100 dark:bg-gray-900 rounded-lg text-xs break-all select-all"></code>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Make sure this exact URI is registered in your Google Cloud Console OAuth settings.</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Turnstile Site Key</label>
@@ -299,7 +301,6 @@ export function renderSettingsPage() {
     const body = {
       google_client_id: main.querySelector('#input-google-client-id').value.trim(),
       google_client_secret: main.querySelector('#input-google-client-secret').value.trim(),
-      google_redirect_uri: main.querySelector('#input-google-redirect-uri').value.trim(),
       turnstile_site_key: main.querySelector('#input-turnstile-site-key').value.trim(),
       turnstile_secret_key: main.querySelector('#input-turnstile-secret-key').value.trim()
     };
@@ -496,13 +497,16 @@ async function loadSettings() {
     const integrationFields = [
       ['input-google-client-id', 'google_client_id'],
       ['input-google-client-secret', 'google_client_secret'],
-      ['input-google-redirect-uri', 'google_redirect_uri'],
       ['input-turnstile-site-key', 'turnstile_site_key'],
       ['input-turnstile-secret-key', 'turnstile_secret_key']
     ];
     for (const [id, key] of integrationFields) {
       const el = document.getElementById(id);
       if (el && settings[key]) el.value = settings[key];
+    }
+    const redirectDisplay = document.getElementById('redirect-uri-display');
+    if (redirectDisplay) {
+      redirectDisplay.textContent = `${location.origin}/auth/callback`;
     }
   } catch (err) {
     // Settings not loaded yet
