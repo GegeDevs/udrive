@@ -279,7 +279,7 @@ async function loadFiles(folderId) {
     renderFileList(main, folderId);
   } catch (err) {
     main.querySelector('.file-list-container').innerHTML = `
-      <div class="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
+      <div class="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
         <span class="material-icons-outlined text-5xl mb-3">cloud_off</span>
         <p class="text-lg font-medium">Cannot load files</p>
         <p class="text-sm mt-1">${err.message}</p>
@@ -293,7 +293,7 @@ function renderFileList(main, folderId) {
 
   if (currentFiles.length === 0) {
     container.innerHTML = `
-      <div class="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
+      <div class="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
         <span class="material-icons-outlined text-5xl mb-3">folder_open</span>
         <p class="text-lg font-medium">This folder is empty</p>
         <p class="text-sm mt-1">Upload files or create a folder to get started</p>
@@ -881,7 +881,7 @@ export function renderFilesPage() {
 
   main.innerHTML = `
     <div class="flex h-full">
-      <div class="flex-1 overflow-auto">
+      <div class="flex-1 flex flex-col min-h-0">
         <div class="sticky top-0 z-10 bg-white dark:bg-gray-900 p-3 md:p-6 pb-0 md:pb-0">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div class="min-w-0 overflow-hidden">
@@ -935,12 +935,12 @@ export function renderFilesPage() {
         </div>
         </div>
 
-        <div class="file-list-container p-3 md:p-6 pt-0 md:pt-0">
-          <div class="flex items-center justify-center h-64">
+        <div class="file-list-container flex-1 overflow-auto p-3 md:p-6 pt-0 md:pt-0">
+          <div class="flex items-center justify-center h-full">
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
         </div>
-        <footer class="text-center text-xs text-gray-400 dark:text-gray-500 py-4 border-t border-gray-100 dark:border-gray-800 mt-2">
+        <footer class="shrink-0 text-center text-xs text-gray-400 dark:text-gray-500 py-4 border-t border-gray-100 dark:border-gray-800 mt-2">
           Made with <span class="text-red-500">❤️</span> @ GegeDevs
         </footer>
       </div>
