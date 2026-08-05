@@ -940,6 +940,9 @@ export function renderFilesPage() {
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
         </div>
+        <footer class="text-center text-xs text-gray-400 dark:text-gray-500 py-4 border-t border-gray-100 dark:border-gray-800 mt-2">
+          Made with <span class="text-red-500">❤️</span> @ GegeDevs
+        </footer>
       </div>
       <aside id="file-info-panel" class="hidden w-full md:w-72 border-l-0 md:border-l border-gray-200 dark:border-gray-700 overflow-auto shrink-0"></aside>
     </div>
