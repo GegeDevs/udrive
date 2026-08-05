@@ -702,7 +702,26 @@ files.post('/:fileId/transfer-owner', async (c) => {
 
   // Get file info including parent folder
   const fileInfo = await drive.getFileInfo(c.env, db, sourceAccountId, fileId);
-  const parentFolder = fileInfo.parents?.[0] || await getSharedFolderId(db);
+  const sharedFolderId = await getSharedFolderId(db);
+  const actualParent = fileInfo.parents?.[0] || null;
+  let parentFolder = actualParent || sharedFolderId;
+
+  // The copy below runs with the TARGET account's credentials, so the target
+  // must be able to READ the source file. Files inside the shared folder are
+  // visible to every account; files in the source account's private space are
+  // not, which made the copy fail with 404. When needed, move the original
+  // into the shared folder first — it is permanently deleted at the end of
+  // the transfer anyway — and make sure the target account is a member.
+  if (sharedFolderId) {
+    const insideShared = actualParent
+      ? await drive.isFolderInside(c.env, db, sourceAccountId, actualParent, sharedFolderId)
+      : false;
+    if (!insideShared) {
+      await drive.moveFile(c.env, db, sourceAccountId, fileId, sharedFolderId, actualParent || '');
+      parentFolder = sharedFolderId;
+    }
+    await drive.ensureAccountFolderAccess(c.env, db, targetAccountId, sharedFolderId);
+  }
 
   // Step 1: Copy file to target account (lands in target's root or shared folder)
   const newFile = await drive.copyFile(c.env, db, targetAccountId, fileId, parentFolder);

@@ -199,12 +199,15 @@ export async function moveFile(env, db, accountId, fileId, newParentId, oldParen
 
 export async function copyFile(env, db, accountId, fileId, destinationId) {
   const headers = await getAuthHeaders(env, db, accountId);
+  // destinationId may be null (e.g. no shared folder configured) — omit
+  // `parents` in that case so the copy lands in the copier's root.
+  const body = destinationId ? JSON.stringify({ parents: [destinationId] }) : '{}';
   const res = await fetch(`${DRIVE_API}/files/${fileId}/copy?fields=id,name,mimeType,size`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ parents: [destinationId] })
+    body
   });
-  if (!res.ok) throw new Error(`Copy failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Copy failed: ${res.status} (${fileId} -> ${destinationId || 'root'})`);
   return res.json();
 }
 
@@ -292,6 +295,26 @@ export async function getFileInfo(env, db, accountId, fileId) {
   const res = await fetch(`${DRIVE_API}/files/${fileId}?fields=id,name,mimeType,size,modifiedTime,createdTime,parents,owners(emailAddress,displayName),shared`, { headers });
   if (!res.ok) throw new Error('File info fetch failed');
   return res.json();
+}
+
+export async function isFolderInside(env, db, accountId, folderId, ancestorId) {
+  if (!folderId || !ancestorId) return false;
+  if (folderId === ancestorId) return true;
+  const headers = await getAuthHeaders(env, db, accountId);
+  const seen = new Set();
+  let current = folderId;
+  for (let i = 0; i < 25; i++) {
+    if (seen.has(current)) return false;
+    seen.add(current);
+    const res = await fetch(`${DRIVE_API}/files/${current}?fields=parents`, { headers });
+    if (!res.ok) return false;
+    const data = await res.json();
+    const parents = data.parents || [];
+    if (parents.includes(ancestorId)) return true;
+    if (!parents.length) return false;
+    current = parents[0];
+  }
+  return false;
 }
 
 export async function checkFileExists(env, db, accountId, fileId) {
