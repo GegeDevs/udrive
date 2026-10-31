@@ -11,6 +11,7 @@ import logsRoutes from './routes/logs.js';
 import apiV1Routes from './routes/api-v1.js';
 import apiKeysRoutes from './routes/api-keys.js';
 import jobsRoutes from './routes/jobs.js';
+import webdavRoutes from './routes/webdav.js';
 import { sharePublic, shareAdmin } from './routes/share.js';
 
 export function createApp(db, envVars = null) {
@@ -56,6 +57,9 @@ export function createApp(db, envVars = null) {
   app.route('/api/api-keys', apiKeysRoutes);
   app.route('/api/jobs', jobsRoutes);
   app.route('/api/v1', apiV1Routes);
+  // WebDAV (RFC 4918 subset) — mount outside /api so WebDAV clients can use it
+  // directly. Auth is handled inside the sub-app (session token / Basic).
+  app.route('/webdav', webdavRoutes);
 
   // Short download link
   app.get('/dlink/:token', async (c, next) => {

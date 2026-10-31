@@ -6,6 +6,9 @@ export default defineConfig({
   plugins: [tailwindcss()],
   server: {
     port: 5173,
+    // Vite's CORS middleware answers OPTIONS itself, which breaks WebDAV
+    // capability discovery. The app is same-origin, so turn it off.
+    cors: false,
     proxy: {
       '/api/': {
         target: 'http://localhost:3000',
@@ -20,7 +23,8 @@ export default defineConfig({
       },
       '/auth/': 'http://localhost:3000',
       '/dlink/': 'http://localhost:3000',
-      '/share/': 'http://localhost:3000'
+      '/share/': 'http://localhost:3000',
+      '/webdav': 'http://localhost:3000'
     }
   },
   build: {
