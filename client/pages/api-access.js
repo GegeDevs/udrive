@@ -95,10 +95,10 @@ async function loadKeys() {
               </div>
             </div>
             <div class="flex items-center gap-1 shrink-0">
-              <button class="btn-edit-key p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" data-id="${key.id}" title="Edit">
+              <button class="btn-edit-key btn-icon hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" data-id="${key.id}" title="Edit">
                 <span class="material-icons-outlined text-base">edit</span>
               </button>
-              <button class="btn-revoke-key p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" data-id="${key.id}" title="Revoke">
+              <button class="btn-revoke-key btn-icon hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" data-id="${key.id}" title="Revoke">
                 <span class="material-icons-outlined text-base">delete</span>
               </button>
             </div>

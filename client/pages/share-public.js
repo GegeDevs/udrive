@@ -36,7 +36,7 @@ function showLoginModal() {
   modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4';
   modal.innerHTML = `
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-sm w-full relative">
-      <button id="share-login-close" class="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+      <button id="share-login-close" class="absolute top-3 right-3 btn-icon text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
         <span class="material-icons-outlined text-xl">close</span>
       </button>
       <div class="text-center mb-5">
@@ -54,7 +54,7 @@ function showLoginModal() {
           <input type="password" id="share-login-password" required autocomplete="current-password" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
         </div>
         <p id="share-login-error" class="text-sm text-red-500 hidden"></p>
-        <button type="submit" id="share-login-btn" class="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm">
+        <button type="submit" id="share-login-btn" class="btn-block">
           Sign In
         </button>
       </form>
@@ -178,7 +178,7 @@ async function renderUploadPage(main) {
               <p id="selected-file-name" class="text-sm font-medium truncate"></p>
               <p id="selected-file-size" class="text-xs text-gray-500"></p>
             </div>
-            <button id="clear-file" class="text-gray-400 hover:text-red-500">
+            <button id="clear-file" class="btn-icon text-gray-400 hover:text-red-500">
               <span class="material-icons-outlined text-sm">close</span>
             </button>
           </div>
@@ -203,7 +203,7 @@ async function renderUploadPage(main) {
 
         ${shareInfo.turnstileSiteKey ? `<div id="turnstile-container" class="mt-4 flex justify-center"></div>` : ''}
 
-        <button id="upload-btn" disabled class="w-full mt-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm">
+        <button id="upload-btn" disabled class="btn-block mt-4">
           Upload & Share
         </button>
 
@@ -355,7 +355,7 @@ async function renderUploadPage(main) {
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4';
     modal.innerHTML = `
       <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-sm w-full relative">
-        <button id="share-modal-close" class="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+        <button id="share-modal-close" class="absolute top-3 right-3 btn-icon text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
           <span class="material-icons-outlined text-xl">close</span>
         </button>
         <div class="text-center mb-4">
@@ -365,7 +365,7 @@ async function renderUploadPage(main) {
         <div class="flex justify-center mb-4">${generateQRCode(link)}</div>
         <div class="flex items-center gap-2">
           <input type="text" readonly value="${link}" class="flex-1 px-2 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs">
-          <button id="share-modal-copy" class="px-3 py-1.5 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">Copy</button>
+          <button id="share-modal-copy" class="btn-primary text-xs">Copy</button>
         </div>
         <p class="text-xs text-gray-500 text-center mt-2">Expires: ${parseDbDate(expiresAt).toLocaleDateString()}</p>
       </div>
@@ -445,7 +445,7 @@ async function renderDownloadPage(main, shareId) {
       </div>
     ` : ''}
 
-    <button id="dl-btn" class="w-full mt-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm">
+    <button id="dl-btn" class="btn-block mt-4">
       Download
     </button>
 

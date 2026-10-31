@@ -61,6 +61,7 @@ export function renderTrashPage() {
     </div>
   `;
 
+  renderCachedTrash();
   loadTrash();
 
   main.querySelector('#btn-refresh-trash').addEventListener('click', async () => {
@@ -144,11 +145,33 @@ export function renderTrashPage() {
   });
 }
 
+const TRASH_CACHE_KEY = 'udrive-trash-cache';
+
 async function loadTrash() {
   const container = document.getElementById('trash-list');
 
   try {
     const files = await api('/api/files/trash/list');
+    sessionStorage.setItem(TRASH_CACHE_KEY, JSON.stringify(files));
+    renderTrashFiles(files);
+  } catch (err) {
+    if (!container.querySelector('table')) {
+      container.innerHTML = `<p class="text-red-500">${err.message}</p>`;
+    }
+  }
+}
+
+// Show the last listing immediately while the fresh one loads; trash scans
+// every account, so a cold fetch takes seconds.
+function renderCachedTrash() {
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(TRASH_CACHE_KEY) || 'null');
+    if (Array.isArray(cached)) renderTrashFiles(cached);
+  } catch {}
+}
+
+function renderTrashFiles(files) {
+  const container = document.getElementById('trash-list');
 
     const countEl = document.getElementById('trash-count');
     if (countEl) countEl.textContent = `(${files.length})`;
@@ -189,10 +212,10 @@ async function loadTrash() {
                 <td class="py-2 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">${formatFileSize(file.size)}</td>
                 <td class="py-2 pr-4">
                   <div class="flex items-center gap-1">
-                    ${hasPermission('trash:restore') ? `<button class="btn-restore p-1.5 rounded-full hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600 transition-colors" title="Restore">
+                    ${hasPermission('trash:restore') ? `<button class="btn-restore btn-icon hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600 transition-colors" title="Restore">
                       <span class="material-icons-outlined text-base">restore</span>
                     </button>` : ''}
-                    ${hasPermission('trash:permanent_delete') ? `<button class="btn-perm-delete p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" title="Delete permanently">
+                    ${hasPermission('trash:permanent_delete') ? `<button class="btn-perm-delete btn-icon hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" title="Delete permanently">
                       <span class="material-icons-outlined text-base">delete_forever</span>
                     </button>` : ''}
                   </div>
@@ -247,7 +270,4 @@ async function loadTrash() {
       });
     });
 
-  } catch (err) {
-    container.innerHTML = `<p class="text-red-500">${err.message}</p>`;
-  }
 }

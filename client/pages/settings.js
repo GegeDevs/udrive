@@ -187,7 +187,7 @@ export function renderSettingsPage() {
 
         ${hasPermission('settings:database') ? `<section>
           <h3 class="text-lg font-medium mb-4">Database</h3>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Download or upload database for migration between Local and Cloudflare deployments.</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Download or upload database for migration between UDrive instances.</p>
           <div class="space-y-3">
             <div class="space-y-1">
               <p class="text-xs font-medium text-gray-600 dark:text-gray-400">Select data:</p>
@@ -236,7 +236,7 @@ export function renderSettingsPage() {
 
         <section>
           <h3 class="text-lg font-medium mb-4">Session</h3>
-          <button id="btn-logout" class="flex items-center gap-2 px-4 py-2 rounded-lg border border-red-300 dark:border-red-700 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm font-medium">
+          <button id="btn-logout" class="btn-secondary text-sm text-red-600 dark:text-red-400">
             <span class="material-icons-outlined text-lg">logout</span>
             Logout
           </button>

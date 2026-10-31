@@ -100,13 +100,13 @@ function renderTransferItem(item) {
         `}
       </div>
       <div class="flex items-center gap-1 shrink-0">
-        ${isDownloading ? `<button class="btn-page-pause p-1.5 rounded-full hover:bg-yellow-50 dark:hover:bg-yellow-900/20 text-yellow-500 transition-colors" data-id="${item.id}" title="Pause">
+        ${isDownloading ? `<button class="btn-page-pause btn-icon hover:bg-yellow-50 dark:hover:bg-yellow-900/20 text-yellow-500 transition-colors" data-id="${item.id}" title="Pause">
           <span class="material-icons-outlined text-base">pause</span>
         </button>` : ''}
-        ${isPaused ? `<button class="btn-page-resume p-1.5 rounded-full hover:bg-green-50 dark:hover:bg-green-900/20 text-green-500 transition-colors" data-id="${item.id}" title="Resume">
+        ${isPaused ? `<button class="btn-page-resume btn-icon hover:bg-green-50 dark:hover:bg-green-900/20 text-green-500 transition-colors" data-id="${item.id}" title="Resume">
           <span class="material-icons-outlined text-base">play_arrow</span>
         </button>` : ''}
-        ${isActive || isPaused ? `<button class="btn-page-cancel p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" data-id="${item.id}" title="Cancel">
+        ${isActive || isPaused ? `<button class="btn-page-cancel btn-icon hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" data-id="${item.id}" title="Cancel">
           <span class="material-icons-outlined text-base">close</span>
         </button>` : ''}
       </div>

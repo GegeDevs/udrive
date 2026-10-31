@@ -10,9 +10,10 @@ import activityRoutes from './routes/activity.js';
 import logsRoutes from './routes/logs.js';
 import apiV1Routes from './routes/api-v1.js';
 import apiKeysRoutes from './routes/api-keys.js';
+import jobsRoutes from './routes/jobs.js';
 import { sharePublic, shareAdmin } from './routes/share.js';
 
-export function createApp(getDB, envVars = null) {
+export function createApp(db, envVars = null) {
   const app = new Hono();
 
   // Inject DB and env into context
@@ -20,7 +21,6 @@ export function createApp(getDB, envVars = null) {
     if (envVars) {
       c.env = { ...c.env, ...envVars };
     }
-    const db = getDB(c.env);
     c.set('db', db);
     // Settings-table config (google oauth, turnstile) overrides env vars so
     // values edited from the Settings page apply without a restart
@@ -54,12 +54,11 @@ export function createApp(getDB, envVars = null) {
   app.route('/api/activity', activityRoutes);
   app.route('/api/logs', logsRoutes);
   app.route('/api/api-keys', apiKeysRoutes);
+  app.route('/api/jobs', jobsRoutes);
   app.route('/api/v1', apiV1Routes);
 
   // Short download link
   app.get('/dlink/:token', async (c, next) => {
-    const db = getDB(c.env);
-    c.set('db', db);
     const { Hono } = await import('hono');
     const token = c.req.param('token');
 

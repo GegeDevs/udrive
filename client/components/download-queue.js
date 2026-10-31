@@ -145,10 +145,10 @@ function renderPanel(full = false) {
     <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700 select-none">
       <span id="dl-header-text" class="text-sm font-medium">${headerText}</span>
       <div class="flex items-center">
-        <button id="dl-panel-toggle" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+        <button id="dl-panel-toggle" class="btn-icon hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
           <span class="material-icons-outlined text-base">${isMinimized ? 'expand_less' : 'expand_more'}</span>
         </button>
-        <button id="dl-panel-close" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+        <button id="dl-panel-close" class="btn-icon hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
           <span class="material-icons-outlined text-base">close</span>
         </button>
       </div>
@@ -223,7 +223,7 @@ function renderItem(item) {
       </div>
       ${item.status === 'downloading' ? `
         <span data-progress-text="${item.id}" class="text-xs text-gray-400 shrink-0 w-8 text-right">${item.progress}%</span>
-        <button class="btn-cancel-dl p-1 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" data-id="${item.id}" title="Cancel">
+        <button class="btn-cancel-dl btn-icon hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" data-id="${item.id}" title="Cancel">
           <span class="material-icons-outlined text-sm">close</span>
         </button>
       ` : ''}

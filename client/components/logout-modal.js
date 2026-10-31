@@ -16,7 +16,7 @@ export function showLogoutModal() {
       <p class="text-sm text-gray-600 dark:text-gray-400 mb-6">Are you sure you want to logout?</p>
       <div class="flex justify-end gap-2">
         <button id="logout-cancel" class="btn-secondary text-sm">Cancel</button>
-        <button id="logout-confirm" class="px-4 py-2 bg-red-600 text-white rounded-full font-medium hover:bg-red-700 transition-colors text-sm">Logout</button>
+        <button id="logout-confirm" class="btn-danger text-sm">Logout</button>
       </div>
     </div>
   `;

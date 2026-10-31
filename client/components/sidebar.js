@@ -31,6 +31,7 @@ export function updateSidebarContent(sidebar, totalUsed, totalLimit, collapsed) 
   const navItems = [];
   if (hasPageAccess('drive')) navItems.push({ path: '/', icon: 'folder', label: 'My Drive' });
   navItems.push({ path: '/transfer', icon: 'swap_vert', label: 'Transfers' });
+  navItems.push({ path: '/progress', icon: 'pending_actions', label: 'Progress' });
   if (hasPageAccess('trash')) navItems.push({ path: '/trash', icon: 'delete', label: 'Trash' });
   if (hasPageAccess('accounts')) navItems.push({ path: '/accounts', icon: 'people', label: 'Accounts' });
   if (hasPageAccess('settings')) navItems.push({ path: '/settings', icon: 'settings', label: 'Settings' });

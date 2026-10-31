@@ -28,7 +28,7 @@ export function renderSetupPage() {
             <input type="password" id="setup-confirm" required autocomplete="new-password" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
           </div>
           <p id="setup-error" class="text-sm text-red-500 hidden"></p>
-          <button type="submit" id="setup-btn" class="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm">
+          <button type="submit" id="setup-btn" class="btn-block">
             Create Master Account
           </button>
         </form>

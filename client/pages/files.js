@@ -3,6 +3,7 @@ import { getQueryParams } from '../router.js';
 import { renderBreadcrumb } from '../components/breadcrumb.js';
 import { showContextMenu, hideContextMenu } from '../components/context-menu.js';
 import { showToast } from '../components/toast.js';
+import { uploadDroppedEntries } from '../components/drop-upload.js';
 import { addToUploadQueue, onUploadComplete, downloadBackground, downloadViaBrowser, addTransferOwnership } from '../components/transfer-panel.js';
 import { renderSidebar } from '../components/sidebar.js';
 import { hasPermission } from '../auth-state.js';
@@ -10,6 +11,9 @@ import { formatDateTime } from '../time-utils.js';
 
 let folderStack = [];
 let currentFiles = [];
+let folderFiles = [];
+let searchActive = false;
+const searchFolderTrail = new Map();
 let selectedFiles = new Set();
 let viewMode = localStorage.getItem('udrive-view-mode') || 'list';
 
@@ -111,6 +115,7 @@ function isPreviewable(mimeType) {
   if (mimeType === 'application/json') return true;
   if (mimeType === 'application/javascript') return true;
   if (mimeType === 'application/xml') return true;
+  if (mimeType === 'application/pdf') return true;
   return false;
 }
 
@@ -128,32 +133,35 @@ function openPreview(fileId, name, mimeType) {
 
   const modal = document.createElement('div');
   modal.id = 'preview-modal';
-  modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/80';
+  modal.className = 'fixed inset-0 z-50 bg-black/80';
 
   let contentHtml = '';
 
   if (mimeType.startsWith('image/')) {
-    contentHtml = `<img src="/api/files/${fileId}/preview" alt="${escapeAttr(name)}" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl">`;
+    contentHtml = `<img src="/api/files/${fileId}/preview" alt="${escapeAttr(name)}" class="w-full h-full object-contain">`;
   } else if (mimeType.startsWith('video/')) {
-    contentHtml = `<video src="/api/files/${fileId}/preview" controls preload="metadata" class="max-w-full max-h-[80vh] rounded-lg shadow-2xl"></video>`;
+    contentHtml = `<video src="/api/files/${fileId}/preview" controls preload="metadata" class="w-full h-full object-contain"></video>`;
+  } else if (mimeType === 'application/pdf') {
+    contentHtml = `<iframe src="/api/files/${fileId}/preview" title="${escapeAttr(name)}" class="w-full h-full border-0 bg-white"></iframe>`;
   } else if (isTextType(mimeType)) {
     contentHtml = `
-      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
-        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <p class="font-medium text-sm truncate">${escapeHtml(name)}</p>
-        </div>
+      <div class="bg-white dark:bg-gray-800 w-full h-full flex flex-col">
         <pre id="text-preview-content" class="flex-1 overflow-auto p-4 text-sm font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">Loading...</pre>
       </div>
     `;
   }
 
   modal.innerHTML = `
-    <button id="preview-close" class="absolute top-4 right-4 p-2 rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors z-10">
-      <span class="material-icons-outlined text-2xl">close</span>
-    </button>
-    <p class="absolute top-4 left-4 text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full pointer-events-none">${escapeHtml(name)}</p>
-    <div class="preview-content relative z-0" onclick="event.stopPropagation()">
-      ${contentHtml}
+    <div class="absolute inset-0 flex flex-col">
+      <div class="flex items-center justify-between gap-2 px-3 py-1.5 bg-black/80 text-white shrink-0">
+        <p class="truncate text-xs font-medium">${escapeHtml(name)}</p>
+        <button id="preview-close" class="btn-icon hover:bg-white/10 text-white transition-colors shrink-0">
+          <span class="material-icons-outlined text-lg">close</span>
+        </button>
+      </div>
+      <div class="preview-content relative flex-1 min-h-0" onclick="event.stopPropagation()">
+        ${contentHtml}
+      </div>
     </div>
   `;
 
@@ -260,7 +268,7 @@ function updateSelectionUI() {
 
   const bulkBar = document.getElementById('bulk-actions');
   if (bulkBar) {
-    if (selectedFiles.size > 0) {
+    if (selectedFiles.size >= 2) {
       bulkBar.classList.remove('hidden');
       bulkBar.querySelector('.selected-count').textContent = `${selectedFiles.size} selected`;
     } else {
@@ -269,12 +277,29 @@ function updateSelectionUI() {
   }
 }
 
+// Opening a folder from search results must rebuild the breadcrumb from the
+// folder's real ancestors, not just append it under "My Drive".
+function navigateToFolder(id, name) {
+  const trail = searchActive ? searchFolderTrail.get(id) : null;
+  if (trail) {
+    folderStack = [...trail, { id, name }];
+  } else {
+    folderStack.push({ id, name });
+  }
+  saveFolderStack();
+  window.location.hash = `/?folderId=${id}`;
+}
+
 async function loadFiles(folderId) {
   const main = document.getElementById('main-content');
   const params = folderId ? `?folderId=${folderId}` : '';
 
   try {
-    currentFiles = await api(`/api/files${params}`);
+    folderFiles = await api(`/api/files${params}`);
+    currentFiles = folderFiles;
+    searchActive = false;
+    const searchInput = document.getElementById('file-search');
+    if (searchInput) searchInput.value = '';
     selectedFiles.clear();
     renderFileList(main, folderId);
   } catch (err) {
@@ -294,9 +319,9 @@ function renderFileList(main, folderId) {
   if (currentFiles.length === 0) {
     container.innerHTML = `
       <div class="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
-        <span class="material-icons-outlined text-5xl mb-3">folder_open</span>
-        <p class="text-lg font-medium">This folder is empty</p>
-        <p class="text-sm mt-1">Upload files or create a folder to get started</p>
+        <span class="material-icons-outlined text-5xl mb-3">${searchActive ? 'search_off' : 'folder_open'}</span>
+        <p class="text-lg font-medium">${searchActive ? 'No files match' : 'This folder is empty'}</p>
+        <p class="text-sm mt-1">${searchActive ? 'Try a different keyword' : 'Upload files or create a folder to get started'}</p>
       </div>
     `;
     return;
@@ -331,13 +356,16 @@ function renderListView(container) {
             <td class="py-2 pl-4">
               <div class="flex items-center gap-3">
                 <span class="material-icons-outlined text-2xl ${getFileIconColor(file.mimeType)}">${getFileIcon(file.mimeType)}</span>
-                <span class="text-sm font-medium truncate max-w-md">${escapeHtml(file.name)}</span>
+                <div class="min-w-0">
+                  <p class="text-sm font-medium truncate max-w-md">${escapeHtml(file.name)}</p>
+                  ${file.path ? `<p class="text-[11px] text-gray-400 dark:text-gray-500 truncate max-w-md">${escapeHtml(file.path)}</p>` : ''}
+                </div>
               </div>
             </td>
             <td class="py-2 text-sm text-gray-500 dark:text-gray-400 hidden md:table-cell">${formatDateTime(file.modifiedTime)}</td>
             <td class="py-2 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">${file.mimeType === 'application/vnd.google-apps.folder' ? '—' : formatFileSize(file.size)}</td>
             <td class="py-2 pr-4">
-              <button class="file-more-btn p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
+              <button class="file-more-btn btn-icon hover:bg-gray-200 dark:hover:bg-gray-700">
                 <span class="material-icons-outlined text-lg">more_vert</span>
               </button>
             </td>
@@ -353,26 +381,31 @@ function renderListView(container) {
 
 function renderGridView(container) {
   container.innerHTML = `
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-3">
+    <div class="grid relative grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-3">
       ${currentFiles.map(file => {
         const isImage = file.mimeType?.startsWith('image/');
         const targetId = file.shortcutDetails?.targetId || '';
         const targetMime = file.shortcutDetails?.targetMimeType || '';
-        const thumbnailPlaceholder = isImage
-          ? `<div class="thumb-container w-full h-24 rounded-lg bg-gray-100 dark:bg-gray-800 mb-2 overflow-hidden flex items-center justify-center" data-file-id="${file.id}">
-              <span class="material-icons-outlined text-3xl text-gray-300 dark:text-gray-600 thumb-placeholder">image</span>
+        const thumbnail = isImage
+          ? `<div class="thumb-container absolute inset-0 flex items-center justify-center" data-file-id="${file.id}">
+              <span class="material-icons-outlined text-4xl text-gray-300 dark:text-gray-600 thumb-placeholder">image</span>
             </div>`
-          : `<span class="material-icons-outlined text-5xl ${getFileIconColor(file.mimeType)} mb-2">${getFileIcon(file.mimeType)}</span>`;
+          : `<span class="material-icons-outlined text-5xl ${getFileIconColor(file.mimeType)}">${getFileIcon(file.mimeType)}</span>`;
 
         return `
-        <div class="file-item group relative border border-gray-200 dark:border-gray-700 rounded-xl p-3 hover:shadow-md transition-all cursor-pointer select-none flex flex-col items-center text-center"
-             data-id="${file.id}" data-name="${escapeAttr(file.name)}" data-mime="${file.mimeType}" data-target-id="${targetId}" data-target-mime="${targetMime}">
-          <button class="file-more-btn absolute top-2 right-2 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 opacity-0 group-hover:opacity-100 transition-opacity">
-            <span class="material-icons-outlined text-base">more_vert</span>
-          </button>
-          ${thumbnailPlaceholder}
-          <p class="text-xs font-medium truncate w-full">${escapeHtml(file.name)}</p>
-          <p class="text-xs text-gray-400 mt-0.5">${file.mimeType === 'application/vnd.google-apps.folder' ? 'Folder' : formatFileSize(file.size)}</p>
+        <div class="file-item group relative flex flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700 transition-all cursor-pointer select-none"
+             data-id="${file.id}" data-name="${escapeAttr(file.name)}" data-mime="${file.mimeType}" data-target-id="${targetId}" data-target-mime="${targetMime}"
+             title="${escapeAttr(file.name)}">
+          <div class="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-gray-50 dark:bg-gray-800/60">
+            ${thumbnail}
+            <button class="file-more-btn btn-icon absolute top-1.5 right-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 shadow-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100">
+              <span class="material-icons-outlined text-base leading-none">more_vert</span>
+            </button>
+          </div>
+          <div class="min-w-0 px-2.5 py-2">
+            <p class="text-xs font-medium leading-snug line-clamp-2 break-words min-h-[2.25rem]">${escapeHtml(file.name)}</p>
+            <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-1 truncate">${file.mimeType === 'application/vnd.google-apps.folder' ? 'Folder' : formatFileSize(file.size)}</p>
+          </div>
         </div>
       `;
       }).join('')}
@@ -381,6 +414,72 @@ function renderGridView(container) {
 
   bindFileEvents(container);
   initThumbnailLazyLoad(container);
+  initMarqueeSelection(container);
+}
+
+function initMarqueeSelection(container) {
+  const grid = container.querySelector('.grid');
+  if (!grid) return;
+
+  let start = null;
+  let box = null;
+  let additive = false;
+
+  grid.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.target.closest('.file-item, button')) return;
+    additive = e.ctrlKey || e.metaKey || e.shiftKey;
+    start = { x: e.clientX, y: e.clientY };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  });
+
+  function onMove(e) {
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (!box && Math.hypot(dx, dy) < 4) return;
+
+    const gridRect = grid.getBoundingClientRect();
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'absolute z-20 rounded border border-blue-500/70 bg-blue-500/10 pointer-events-none';
+      grid.appendChild(box);
+      if (!additive) clearSelection();
+    }
+
+    const left = Math.min(e.clientX, start.x);
+    const top = Math.min(e.clientY, start.y);
+    const width = Math.abs(dx);
+    const height = Math.abs(dy);
+
+    box.style.left = `${left - gridRect.left}px`;
+    box.style.top = `${top - gridRect.top}px`;
+    box.style.width = `${width}px`;
+    box.style.height = `${height}px`;
+
+    const hit = new Set(additive ? selectedFiles : []);
+    grid.querySelectorAll('.file-item').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.left < left + width && r.right > left && r.top < top + height && r.bottom > top) {
+        hit.add(el.dataset.id);
+      }
+    });
+    selectedFiles.clear();
+    hit.forEach(id => selectedFiles.add(id));
+    updateSelectionUI();
+  }
+
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    if (box) {
+      box.remove();
+      box = null;
+      selectionMode = selectedFiles.size > 0;
+    }
+    start = null;
+  }
 }
 
 function initThumbnailLazyLoad(container) {
@@ -403,8 +502,7 @@ function initThumbnailLazyLoad(container) {
 
 function loadThumbnail(container, fileId) {
   const img = new Image();
-  img.className = 'w-full h-full object-cover rounded-lg';
-  img.loading = 'lazy';
+  img.className = 'w-full h-full object-cover';
   img.decoding = 'async';
 
   img.onload = () => {
@@ -437,13 +535,9 @@ function bindFileEvents(container) {
       const targetMime = row.dataset.targetMime;
 
       if (mime === 'application/vnd.google-apps.folder') {
-        folderStack.push({ id, name });
-        saveFolderStack();
-        window.location.hash = `/?folderId=${id}`;
+        navigateToFolder(id, name);
       } else if (mime === 'application/vnd.google-apps.shortcut' && targetMime === 'application/vnd.google-apps.folder') {
-        folderStack.push({ id: targetId, name });
-        saveFolderStack();
-        window.location.hash = `/?folderId=${targetId}`;
+        navigateToFolder(targetId, name);
       } else if (mime === 'application/vnd.google-apps.shortcut' && targetMime && isPreviewable(targetMime)) {
         openPreview(targetId, name, targetMime);
       } else if (isPreviewable(mime)) {
@@ -524,9 +618,7 @@ function showFileContextMenu(x, y, dataset) {
 
   if (isFolder) {
     items.push({ icon: 'folder_open', label: 'Open', action: 'open', handler: () => {
-      folderStack.push({ id: dataset.id, name: dataset.name });
-      saveFolderStack();
-      window.location.hash = `/?folderId=${dataset.id}`;
+      navigateToFolder(dataset.id, dataset.name);
     }});
   } else {
     if (isPreviewable(dataset.mime) && hasPermission('drive:preview')) {
@@ -698,6 +790,14 @@ async function deleteAction(fileId, name) {
   try {
     const result = await api(`/api/files/${fileId}`, { method: 'DELETE' });
 
+    if (result.queued) {
+      showToast('Delete queued — track it in Progress', 'info');
+      currentFiles = currentFiles.filter(f => f.id !== fileId);
+      const params = getQueryParams();
+      renderFileList(document.getElementById('main-content'), params.get('folderId'));
+      return;
+    }
+
     if (result.success === false) {
       showToast(`Partial delete: ${result.deletedFiles || 0} files, ${result.deletedFolders || 0} folders deleted, ${result.failed || 0} failed`, 'error');
     } else {
@@ -708,22 +808,6 @@ async function deleteAction(fileId, name) {
     loadFiles(params.get('folderId'));
     renderSidebar();
   } catch (err) {
-    // Check if folder too large with subfolders guidance
-    if (err.response?.tooLarge && err.response?.subfolders) {
-      const subfolderList = err.response.subfolders
-        .map(f => `• ${f.name}`)
-        .join('\n');
-
-      const message = `${err.message}\n\n${err.response.suggestion || 'Delete these subfolders first:'}\n${subfolderList}`;
-
-      if (confirm(message + '\n\nOpen this folder to delete subfolders?')) {
-        folderStack.push({ id: fileId, name });
-        saveFolderStack();
-        window.location.hash = `/?folderId=${fileId}`;
-        return;
-      }
-    }
-
     showToast(err.message, 'error');
   }
 }
@@ -732,32 +816,24 @@ async function bulkDelete() {
   const count = selectedFiles.size;
   if (!confirm(`Delete ${count} item(s)?`)) return;
 
-  const params = getQueryParams();
-  let success = 0;
-  let failed = 0;
+  try {
+    const fileIds = [...selectedFiles];
+    const result = await api('/api/files/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ fileIds })
+    });
 
-  for (const fileId of selectedFiles) {
-    try {
-      const result = await api(`/api/files/${fileId}`, { method: 'DELETE' });
-      if (result.success !== false) {
-        success++;
-      } else {
-        failed++;
-      }
-    } catch (err) {
-      failed++;
-      showToast(`Failed to delete: ${err.message}`, 'error');
+    if (result.queued) {
+      showToast(`${count} item(s) queued for deletion — track it in Progress`, 'info');
+      currentFiles = currentFiles.filter(f => !selectedFiles.has(f.id));
+      selectedFiles.clear();
+      const params = getQueryParams();
+      renderFileList(document.getElementById('main-content'), params.get('folderId'));
+      return;
     }
+  } catch (err) {
+    showToast(err.message, 'error');
   }
-
-  if (failed > 0) {
-    showToast(`Deleted ${success} item(s), ${failed} failed`, 'error');
-  } else {
-    showToast(`Deleted ${success} item(s)`, 'success');
-  }
-
-  loadFiles(params.get('folderId'));
-  renderSidebar();
 }
 
 async function bulkDownload() {
@@ -775,7 +851,7 @@ async function showFileInfo(fileId) {
   panel.innerHTML = `
     <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
       <h3 class="font-semibold text-sm">File Info</h3>
-      <button id="close-info-panel" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+      <button id="close-info-panel" class="btn-icon hover:bg-gray-100 dark:hover:bg-gray-800">
         <span class="material-icons-outlined text-lg">close</span>
       </button>
     </div>
@@ -794,7 +870,7 @@ async function showFileInfo(fileId) {
     const detailsHtml = `
       <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
         <h3 class="font-semibold text-sm">File Info</h3>
-        <button id="close-info-panel" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+        <button id="close-info-panel" class="btn-icon hover:bg-gray-100 dark:hover:bg-gray-800">
           <span class="material-icons-outlined text-lg">close</span>
         </button>
       </div>
@@ -846,7 +922,7 @@ async function showFileInfo(fileId) {
     panel.innerHTML = `
       <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
         <h3 class="font-semibold text-sm">File Info</h3>
-        <button id="close-info-panel" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+        <button id="close-info-panel" class="btn-icon hover:bg-gray-100 dark:hover:bg-gray-800">
           <span class="material-icons-outlined text-lg">close</span>
         </button>
       </div>
@@ -888,11 +964,16 @@ export function renderFilesPage() {
               ${renderBreadcrumb(folderStack)}
             </div>
             <div class="flex items-center gap-1.5 md:gap-2 shrink-0">
+              <div class="relative">
+                <span class="material-icons-outlined absolute left-2 top-1/2 -translate-y-1/2 text-base text-gray-400 pointer-events-none">search</span>
+                <input id="file-search" type="search" placeholder="Search name"
+                  class="w-32 sm:w-48 pl-8 pr-2 py-1.5 text-sm rounded-full border border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:border-blue-500">
+              </div>
               <div class="flex items-center border border-gray-300 dark:border-gray-600 rounded-full overflow-hidden">
-                <button id="btn-view-list" class="p-1.5 md:p-2 ${viewMode === 'list' ? 'bg-gray-100 dark:bg-gray-700' : 'hover:bg-gray-50 dark:hover:bg-gray-800'} transition-colors" title="List view">
+                <button id="btn-view-list" class="btn-chip ${viewMode === 'list' ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-600 dark:text-blue-400' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}" title="List view">
                   <span class="material-icons-outlined text-base md:text-lg">view_list</span>
                 </button>
-                <button id="btn-view-grid" class="p-1.5 md:p-2 ${viewMode === 'grid' ? 'bg-gray-100 dark:bg-gray-700' : 'hover:bg-gray-50 dark:hover:bg-gray-800'} transition-colors" title="Grid view">
+                <button id="btn-view-grid" class="btn-chip ${viewMode === 'grid' ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-600 dark:text-blue-400' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}" title="Grid view">
                   <span class="material-icons-outlined text-base md:text-lg">grid_view</span>
                 </button>
             </div>
@@ -911,38 +992,35 @@ export function renderFilesPage() {
             <input type="file" id="file-input" class="hidden" multiple>` : ''}
           </div>
         </div>
+        </div>
 
-        <div id="bulk-actions" class="hidden mb-2 flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <span class="selected-count text-xs font-medium text-blue-700 dark:text-blue-300 mr-auto">0</span>
-          ${hasPermission('drive:copy') ? `<button id="bulk-copy" class="p-1.5 rounded-full hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300 transition-colors" title="Copy">
-            <span class="material-icons-outlined text-base">content_copy</span>
+        <div id="bulk-actions" class="hidden fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/90 border border-blue-200 dark:border-blue-800 rounded-full shadow-lg backdrop-blur">
+          <span class="selected-count text-xs font-medium text-blue-700 dark:text-blue-300 mr-2">0 selected</span>
+          ${hasPermission('drive:copy') ? `<button id="bulk-copy" class="btn-icon hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300" title="Copy">
+            <span class="material-icons-outlined">content_copy</span>
           </button>` : ''}
-          ${hasPermission('drive:move') ? `<button id="bulk-cut" class="p-1.5 rounded-full hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300 transition-colors" title="Cut">
-            <span class="material-icons-outlined text-base">content_cut</span>
+          ${hasPermission('drive:move') ? `<button id="bulk-cut" class="btn-icon hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300" title="Cut">
+            <span class="material-icons-outlined">content_cut</span>
           </button>` : ''}
-          ${(hasPermission('drive:download_browser') || hasPermission('drive:download_background')) ? `<button id="bulk-download" class="p-1.5 rounded-full hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300 transition-colors" title="Download">
-            <span class="material-icons-outlined text-base">download</span>
+          ${(hasPermission('drive:download_browser') || hasPermission('drive:download_background')) ? `<button id="bulk-download" class="btn-icon hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-700 dark:text-blue-300" title="Download">
+            <span class="material-icons-outlined">download</span>
           </button>` : ''}
-          ${hasPermission('drive:delete') ? `<button id="bulk-delete" class="p-1.5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 transition-colors" title="Delete">
-            <span class="material-icons-outlined text-base">delete</span>
+          ${hasPermission('drive:delete') ? `<button id="bulk-delete" class="btn-icon hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600" title="Delete">
+            <span class="material-icons-outlined">delete</span>
           </button>` : ''}
-          ${hasPermission('drive:transfer_owner') ? `<button id="bulk-transfer" class="p-1.5 rounded-full hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-600 transition-colors" title="Transfer Owner">
-            <span class="material-icons-outlined text-base">swap_horiz</span>
+          ${hasPermission('drive:transfer_owner') ? `<button id="bulk-transfer" class="btn-icon hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-600" title="Transfer Owner">
+            <span class="material-icons-outlined">swap_horiz</span>
           </button>` : ''}
-          <button id="bulk-clear" class="p-1.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" title="Clear">
-            <span class="material-icons-outlined text-base">close</span>
+          <button id="bulk-clear" class="btn-icon hover:bg-gray-200 dark:hover:bg-gray-700" title="Clear">
+            <span class="material-icons-outlined">close</span>
           </button>
         </div>
-        </div>
 
-        <div class="file-list-container flex-1 overflow-auto p-3 md:p-6 pt-0 md:pt-0">
+        <div class="file-list-container flex-1 overflow-auto p-3 md:p-6 pt-0 md:pt-0 pb-20">
           <div class="flex items-center justify-center h-full">
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
         </div>
-        <footer class="shrink-0 text-center text-xs text-gray-400 dark:text-gray-500 py-4 border-t border-gray-100 dark:border-gray-800 mt-2">
-          Made with <span class="text-red-500">❤️</span> @ GegeDevs
-        </footer>
       </div>
       <aside id="file-info-panel" class="hidden w-full md:w-72 border-l-0 md:border-l border-gray-200 dark:border-gray-700 overflow-auto shrink-0"></aside>
     </div>
@@ -959,6 +1037,41 @@ export function renderFilesPage() {
     localStorage.setItem('udrive-view-mode', 'grid');
     renderFilesPage();
   });
+
+  const searchInput = main.querySelector('#file-search');
+  let searchTimer = null;
+  searchInput?.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    const q = searchInput.value.trim();
+    searchTimer = setTimeout(() => runSearch(q), 350);
+  });
+
+  async function runSearch(q) {
+    const container = main.querySelector('.file-list-container');
+    if (q.length < 2) {
+      searchActive = false;
+      currentFiles = folderFiles;
+      renderFileList(main, folderId);
+      return;
+    }
+
+    searchActive = true;
+    container.innerHTML = `
+      <div class="flex items-center justify-center h-40">
+        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    `;
+
+    try {
+      const { matches } = await api(`/api/files/search?q=${encodeURIComponent(q)}`);
+      if (searchInput.value.trim() !== q) return;
+      matches.forEach(m => { if (m.trail) searchFolderTrail.set(m.id, m.trail); });
+      currentFiles = matches;
+      renderFileList(main, folderId);
+    } catch (err) {
+      container.innerHTML = `<p class="text-red-500 text-sm">${escapeHtml(err.message)}</p>`;
+    }
+  }
 
   main.querySelector('#btn-upload')?.addEventListener('click', () => {
     main.querySelector('#file-input').click();
@@ -1039,15 +1152,21 @@ export function renderFilesPage() {
   dropZone.addEventListener('drop', async (e) => {
     e.preventDefault();
     dropZone.classList.remove('ring-2', 'ring-blue-400', 'ring-inset');
-    const files = e.dataTransfer.files;
+
+    // Read synchronously: Chrome clears dataTransfer after the first await.
+    const items = [...e.dataTransfer.items].filter(i => i.kind === 'file');
+    const fallbackFiles = [...e.dataTransfer.files];
 
     onUploadComplete(() => {
       loadFiles(folderId);
       renderSidebar();
     });
 
-    for (const file of files) {
-      addToUploadQueue(file, folderId);
+    try {
+      const count = await uploadDroppedEntries(items, fallbackFiles, folderId);
+      if (!count) showToast('No files found in dropped item', 'error');
+    } catch (err) {
+      showToast(err.message, 'error');
     }
   });
 

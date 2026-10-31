@@ -154,10 +154,10 @@ function renderPanel(full = false) {
     <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700 select-none">
       <span id="upload-header-text" class="text-sm font-medium">${headerText}</span>
       <div class="flex items-center">
-        <button id="upload-panel-toggle" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+        <button id="upload-panel-toggle" class="btn-icon hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
           <span class="material-icons-outlined text-base">${isMinimized ? 'expand_less' : 'expand_more'}</span>
         </button>
-        <button id="upload-panel-close" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+        <button id="upload-panel-close" class="btn-icon hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
           <span class="material-icons-outlined text-base">close</span>
         </button>
       </div>

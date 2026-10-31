@@ -88,7 +88,7 @@ export function renderAccountsPage() {
       <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
         <div class="p-5 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <h3 class="text-lg font-semibold">Rclone Config</h3>
-          <button id="export-result-close" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+          <button id="export-result-close" class="btn-icon hover:bg-gray-100 dark:hover:bg-gray-800">
             <span class="material-icons-outlined text-lg">close</span>
           </button>
         </div>
@@ -120,11 +120,7 @@ export function renderAccountsPage() {
 
     try {
       const accounts = await api('/api/accounts');
-      for (const acc of accounts) {
-        try {
-          await api(`/api/accounts/${acc.id}/storage`);
-        } catch (e) {}
-      }
+      await refreshAccountsConcurrently(accounts, 5);
       showToast('All accounts refreshed', 'success');
       loadAccounts();
       renderSidebar();
@@ -135,6 +131,17 @@ export function renderAccountsPage() {
       btn.disabled = false;
     }
   });
+
+  async function refreshAccountsConcurrently(accounts, concurrency) {
+    let i = 0;
+    const worker = async () => {
+      while (i < accounts.length) {
+        const acc = accounts[i++];
+        try { await api(`/api/accounts/${acc.id}/storage`); } catch (e) {}
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, accounts.length) }, worker));
+  }
 
   main.querySelector('#btn-clean-all')?.addEventListener('click', async () => {
     const btn = main.querySelector('#btn-clean-all');
@@ -407,18 +414,18 @@ async function loadAccounts() {
             </div>
             <div class="flex items-center gap-2 mt-auto">
               ${!acc.is_primary && hasPermission('accounts:set_primary') ? `
-                <button class="btn-set-primary px-2 md:px-3 py-1 md:py-1.5 text-[10px] md:text-xs font-medium border border-gray-300 dark:border-gray-600 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 transition-colors" data-id="${acc.id}">
+                <button class="btn-chip" data-id="${acc.id}">
                   Set as Primary
                 </button>
               ` : ''}
               <div class="ml-auto flex items-center gap-1">
-                ${hasPermission('accounts:color') ? `<button class="btn-color p-1.5 md:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" data-id="${acc.id}" data-color="${color}" title="Change color">
+                ${hasPermission('accounts:color') ? `<button class="btn-color btn-icon hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" data-id="${acc.id}" data-color="${color}" title="Change color">
                   <span class="material-icons-outlined text-base md:text-lg" style="color: ${color};">palette</span>
                 </button>` : ''}
-                ${hasPermission('accounts:refresh') ? `<button class="btn-refresh p-1.5 md:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" data-id="${acc.id}" title="Refresh storage">
+                ${hasPermission('accounts:refresh') ? `<button class="btn-refresh btn-icon hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" data-id="${acc.id}" title="Refresh storage">
                   <span class="material-icons-outlined text-base md:text-lg">refresh</span>
                 </button>` : ''}
-                ${hasPermission('accounts:remove') ? `<button class="btn-remove p-1.5 md:p-2 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" data-id="${acc.id}" title="Remove account">
+                ${hasPermission('accounts:remove') ? `<button class="btn-remove btn-icon hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" data-id="${acc.id}" title="Remove account">
                   <span class="material-icons-outlined text-base md:text-lg">delete</span>
                 </button>` : ''}
               </div>

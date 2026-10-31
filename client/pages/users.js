@@ -291,18 +291,18 @@ async function loadUsers() {
               <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mb-3">
                 <span class="material-icons-outlined text-sm">schedule</span>
                 Session: ${user.session_timeout_hours}h
-                <button class="btn-edit-timeout p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" data-id="${user.id}" data-hours="${user.session_timeout_hours}" title="Edit timeout">
+                <button class="btn-edit-timeout btn-icon hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" data-id="${user.id}" data-hours="${user.session_timeout_hours}" title="Edit timeout">
                   <span class="material-icons-outlined text-sm">edit</span>
                 </button>
               </div>
               <div class="flex items-center gap-2 mt-auto">
-                <button class="btn-edit-perms px-2 py-1 text-xs font-medium border border-gray-300 dark:border-gray-600 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors" data-id="${user.id}" data-username="${escapeHtml(user.username)}">
+                <button class="btn-chip" data-id="${user.id}" data-username="${escapeHtml(user.username)}">
                   Edit Permissions
                 </button>
-                <button class="btn-change-pw p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" data-id="${user.id}" title="Change password">
+                <button class="btn-change-pw btn-icon hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" data-id="${user.id}" title="Change password">
                   <span class="material-icons-outlined text-base">key</span>
                 </button>
-                <button class="btn-delete-user p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors ml-auto" data-id="${user.id}" title="Delete user">
+                <button class="btn-delete-user btn-icon hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors ml-auto" data-id="${user.id}" title="Delete user">
                   <span class="material-icons-outlined text-base">delete</span>
                 </button>
               </div>

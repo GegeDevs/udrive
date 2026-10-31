@@ -14,6 +14,7 @@ import { renderUsersPage } from './pages/users.js';
 import { renderActivityPage } from './pages/activity.js';
 import { renderLogsPage } from './pages/logs.js';
 import { renderTransferPage } from './pages/transfer.js';
+import { renderProgressPage } from './pages/progress.js';
 import { renderApiAccessPage } from './pages/api-access.js';
 import { renderApiDocsPage } from './pages/api-docs.js';
 import { renderSharePublicPage } from './pages/share-public.js';
@@ -111,6 +112,9 @@ async function initApp() {
     });
     registerRoute('/transfer', () => {
       renderTransferPage();
+    });
+    registerRoute('/progress', () => {
+      return renderProgressPage();
     });
     registerRoute('/api-access', () => {
       if (!hasPermission('admin:manage_api') && getCurrentUser()?.role !== 'master') { navigate('/'); return; }

@@ -118,6 +118,27 @@ export async function initDB(db) {
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS jobs (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      label TEXT NOT NULL,
+      payload TEXT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      total INTEGER DEFAULT 0,
+      done INTEGER DEFAULT 0,
+      failed INTEGER DEFAULT 0,
+      message TEXT,
+      error TEXT,
+      result TEXT,
+      created_by INTEGER,
+      created_at TEXT DEFAULT (datetime('now')),
+      started_at TEXT,
+      finished_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_jobs_created_by ON jobs (created_by, created_at);
+
     INSERT OR IGNORE INTO settings (key, value) VALUES ('share_enabled', '1');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('share_folder_id', '');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('share_default_expiry_days', '7');

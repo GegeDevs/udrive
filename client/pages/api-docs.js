@@ -80,7 +80,7 @@ function renderDocsTab() {
                   <span class="px-2 py-0.5 text-[10px] font-bold rounded ${getMethodColor(ep.method)}">${ep.method}</span>
                   <code class="text-xs flex-1">${ep.path}</code>
                   <span class="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">${ep.desc}</span>
-                  <button class="btn-copy-curl p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" title="Copy as cURL" data-endpoint='${JSON.stringify(ep)}'>
+                  <button class="btn-copy-curl btn-icon hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" title="Copy as cURL" data-endpoint='${JSON.stringify(ep)}'>
                     <span class="material-icons-outlined text-sm">content_copy</span>
                   </button>
                 </div>

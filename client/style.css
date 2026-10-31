@@ -39,6 +39,10 @@ body {
   @apply bg-blue-50 dark:bg-blue-900/30;
 }
 
+.grid > .file-item.selected {
+  @apply ring-2 ring-inset ring-blue-500 border-blue-500;
+}
+
 .btn-primary {
   @apply px-3 py-1.5 md:px-4 md:py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700 transition-colors flex items-center gap-1.5 md:gap-2 text-xs md:text-sm;
 }
@@ -47,6 +51,21 @@ body {
   @apply px-3 py-1.5 md:px-4 md:py-2 border border-gray-300 dark:border-gray-600 rounded-full font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-1.5 md:gap-2 text-xs md:text-sm;
 }
 
+.btn-danger {
+  @apply px-3 py-1.5 md:px-4 md:py-2 bg-red-600 text-white rounded-full font-medium hover:bg-red-700 transition-colors flex items-center gap-1.5 md:gap-2 text-xs md:text-sm;
+}
+.btn-block {
+  @apply w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm;
+}
+.btn-icon {
+  @apply inline-flex items-center justify-center p-1.5 rounded-full transition-colors shrink-0;
+}
+.btn-icon .material-icons-outlined {
+  @apply text-base leading-none;
+}
+.btn-chip {
+  @apply inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium border border-gray-300 dark:border-gray-600 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 transition-colors;
+}
 .context-menu-item {
   @apply px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3;
 }

@@ -44,7 +44,7 @@ function showLoginModal(main) {
   modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4';
   modal.innerHTML = `
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-sm p-6 relative">
-      <button id="login-modal-close" class="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+      <button id="login-modal-close" class="absolute top-3 right-3 btn-icon text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
         <span class="material-icons-outlined text-xl">close</span>
       </button>
       <div class="text-center mb-5">
@@ -62,7 +62,7 @@ function showLoginModal(main) {
           <input type="password" id="login-modal-password" required autocomplete="current-password" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
         </div>
         <p id="login-modal-error" class="text-sm text-red-500 hidden"></p>
-        <button type="submit" id="login-modal-btn" class="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm">
+        <button type="submit" id="login-modal-btn" class="btn-block">
           Sign In
         </button>
       </form>
@@ -122,7 +122,7 @@ function renderLoginOnly(main) {
             <input type="password" id="login-password" required autocomplete="current-password" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
           </div>
           <p id="login-error" class="text-sm text-red-500 hidden"></p>
-          <button type="submit" id="login-btn" class="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm">
+          <button type="submit" id="login-btn" class="btn-block">
             Sign In
           </button>
         </form>
@@ -193,7 +193,7 @@ function renderUploadWithLogin(main, shareInfo) {
                   <p id="login-selected-name" class="text-sm font-medium truncate"></p>
                   <p id="login-selected-size" class="text-xs text-gray-500"></p>
                 </div>
-                <button id="login-clear-file" class="text-gray-400 hover:text-red-500">
+                <button id="login-clear-file" class="btn-icon text-gray-400 hover:text-red-500">
                   <span class="material-icons-outlined text-sm">close</span>
                 </button>
               </div>
@@ -216,7 +216,7 @@ function renderUploadWithLogin(main, shareInfo) {
 
             ${shareInfo.turnstileSiteKey ? `<div id="login-turnstile-container" class="mt-3 flex justify-center"></div>` : ''}
 
-            <button id="login-upload-btn" disabled class="w-full mt-3 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm">
+            <button id="login-upload-btn" disabled class="btn-block mt-3">
               Upload & Share
             </button>
 
@@ -260,7 +260,7 @@ function renderUploadWithLogin(main, shareInfo) {
                 <input type="password" id="login-password" required autocomplete="current-password" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
               </div>
               <p id="login-error" class="text-sm text-red-500 hidden"></p>
-              <button type="submit" id="login-btn" class="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm">
+              <button type="submit" id="login-btn" class="btn-block">
                 Sign In
               </button>
             </form>
@@ -456,7 +456,7 @@ async function initLoginUpload(main, shareInfo) {
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4';
     modal.innerHTML = `
       <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-sm w-full relative">
-        <button id="share-modal-close" class="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+        <button id="share-modal-close" class="absolute top-3 right-3 btn-icon text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
           <span class="material-icons-outlined text-xl">close</span>
         </button>
         <div class="text-center mb-4">
@@ -466,7 +466,7 @@ async function initLoginUpload(main, shareInfo) {
         <div class="flex justify-center mb-4">${generateQRCode(link)}</div>
         <div class="flex items-center gap-2">
           <input type="text" readonly value="${link}" class="flex-1 px-2 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs">
-          <button id="share-modal-copy" class="px-3 py-1.5 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">Copy</button>
+          <button id="share-modal-copy" class="btn-primary text-xs">Copy</button>
         </div>
       </div>
     `;

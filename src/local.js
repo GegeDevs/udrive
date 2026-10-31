@@ -8,6 +8,8 @@ import { createApp } from './app.js';
 import { getDB, initDB } from './db/index.js';
 import { initKeepAliveScheduler } from './services/keep-alive-scheduler.js';
 import { initShareCleanupScheduler } from './services/share-cleanup-scheduler.js';
+import { initJobQueue } from './services/job-queue.js';
+import { getAppConfig } from './services/app-config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distPath = join(__dirname, '..', 'dist');
@@ -24,7 +26,7 @@ const envVars = {
   TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY || ''
 };
 
-const app = createApp(() => db, envVars);
+const app = createApp(db, envVars);
 
 // Serve static files in production
 if (existsSync(join(distPath, 'index.html'))) {
@@ -40,6 +42,9 @@ const port = parseInt(process.env.PORT || '3000');
 serve({ fetch: app.fetch, port }, () => {
   console.log(`UDrive server running on http://localhost:${port}`);
 });
+
+// Job queue for long-running actions (folder deletes etc.)
+await initJobQueue(db, async () => ({ ...envVars, ...(await getAppConfig(db)) }));
 
 // Keep-alive scheduler (dynamic: re-reads interval from DB on every cycle,
 // and is rescheduled immediately when the setting changes via the API)

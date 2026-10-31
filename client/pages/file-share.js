@@ -169,7 +169,7 @@ async function renderSharesTab(container) {
     container.innerHTML = `
       <div class="flex items-center justify-between mb-3">
         <p class="text-sm text-gray-500">${data.total} share${data.total !== 1 ? 's' : ''}</p>
-        ${canManage ? `<button id="cleanup-btn" class="text-sm px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">Cleanup Expired</button>` : ''}
+        ${canManage ? `<button id="cleanup-btn" class="btn-secondary text-xs">Cleanup Expired</button>` : ''}
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
@@ -235,14 +235,14 @@ function createShareRow(share) {
     <td class="py-2.5 pr-3 hidden md:table-cell expiry-cell ${isExpired ? 'text-red-500' : 'text-gray-500'}">${formatDateTime(share.expiresAt)}</td>
     <td class="py-2.5">
       <div class="flex items-center gap-1">
-        <button class="qr-btn p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-share-id="${share.shareId}" title="QR Code">
+        <button class="qr-btn btn-icon hover:bg-gray-100 dark:hover:bg-gray-800" data-share-id="${share.shareId}" title="QR Code">
           <span class="material-icons-outlined text-sm">qr_code_2</span>
         </button>
-        <button class="copy-btn p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800" data-share-id="${share.shareId}" title="Copy link">
+        <button class="copy-btn btn-icon hover:bg-gray-100 dark:hover:bg-gray-800" data-share-id="${share.shareId}" title="Copy link">
           <span class="material-icons-outlined text-sm">content_copy</span>
         </button>
         ${canManage ? `
-          <button class="delete-btn p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-red-500" data-share-id="${share.shareId}" title="Delete">
+          <button class="delete-btn btn-icon hover:bg-gray-100 dark:hover:bg-gray-800 text-red-500" data-share-id="${share.shareId}" title="Delete">
             <span class="material-icons-outlined text-sm">delete</span>
           </button>
         ` : ''}
@@ -264,7 +264,7 @@ function bindRowEvents(tr) {
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4';
     modal.innerHTML = `
       <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-xs w-full relative">
-        <button id="qr-modal-close" class="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+        <button id="qr-modal-close" class="absolute top-3 right-3 btn-icon text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
           <span class="material-icons-outlined text-xl">close</span>
         </button>
         <div class="flex justify-center mb-3">${generateQRCode(link)}</div>
@@ -327,10 +327,10 @@ async function renderAccountsTab(container) {
         <div id="share-accounts-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
 
         <div class="flex items-center gap-3 pt-2">
-          <button id="save-share-accounts" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+          <button id="save-share-accounts" class="btn-primary text-sm">
             Save
           </button>
-          <button id="reset-share-accounts" class="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-sm rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+          <button id="reset-share-accounts" class="btn-secondary text-sm">
             Reset to Default
           </button>
           <p id="share-accounts-msg" class="text-sm hidden"></p>
@@ -532,7 +532,7 @@ async function renderSettingsTab(container) {
           </div>
         </div>
 
-        <button id="save-share-settings" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+        <button id="save-share-settings" class="btn-primary text-sm">
           Save Settings
         </button>
 

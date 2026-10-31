@@ -6,7 +6,7 @@ let floatingBtn = null;
 let isMinimized = false;
 let panelVisible = true;
 let panelRendered = false;
-let processing = false;
+let activeUploads = 0;
 let uploadCompleteCallback = null;
 let onChangeCallback = null;
 let abortControllers = new Map();
@@ -111,42 +111,46 @@ export async function downloadViaBrowser(fileId, fileName) {
 
 // === Upload Logic ===
 
-async function processUploadQueue() {
-  if (processing) return;
-  processing = true;
+const UPLOAD_CONCURRENCY = 3;
 
-  while (true) {
+function processUploadQueue() {
+  // Start up to UPLOAD_CONCURRENCY uploads; each completion pumps again so
+  // items added while others are in flight still start immediately.
+  while (activeUploads < UPLOAD_CONCURRENCY) {
     const item = uploadQueue.find(i => i.status === 'waiting');
     if (!item) break;
 
     item.status = 'uploading';
+    activeUploads++;
     renderPanel(true);
     notifyChange();
 
-    try {
-      await uploadWithProgress(item);
-      if (item.status === 'cancelled') continue;
-      item.status = 'done';
-      item.progress = 100;
-      item.speed = 0;
-    } catch (err) {
-      if (item.status !== 'cancelled') {
-        item.status = 'failed';
-        item.error = err.message;
+    (async () => {
+      try {
+        await uploadWithProgress(item);
+        if (item.status !== 'cancelled') {
+          item.status = 'done';
+          item.progress = 100;
+          item.speed = 0;
+        }
+      } catch (err) {
+        if (item.status !== 'cancelled') {
+          item.status = 'failed';
+          item.error = err.message;
+        }
       }
-    }
-    saveState();
-    renderPanel(true);
-    notifyChange();
+      activeUploads--;
+      saveState();
+      renderPanel(true);
+      notifyChange();
+      processUploadQueue();
+    })();
   }
 
-  processing = false;
-
-  if (uploadCompleteCallback && uploadQueue.every(i => i.status === 'done' || i.status === 'failed' || i.status === 'cancelled')) {
+  if (activeUploads === 0 && uploadCompleteCallback && uploadQueue.every(i => i.status === 'done' || i.status === 'failed' || i.status === 'cancelled')) {
     uploadCompleteCallback();
   }
 }
-
 function uploadWithProgress(item) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -415,10 +419,10 @@ function renderPanel(full = false) {
     <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700 select-none">
       <span id="transfer-header-text" class="text-sm font-medium">${getHeaderText()}</span>
       <div class="flex items-center">
-        <button id="transfer-panel-toggle" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="${isMinimized ? 'Expand' : 'Minimize'}">
+        <button id="transfer-panel-toggle" class="btn-icon hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="${isMinimized ? 'Expand' : 'Minimize'}">
           <span class="material-icons-outlined text-base">${isMinimized ? 'expand_less' : 'expand_more'}</span>
         </button>
-        <button id="transfer-panel-hide" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Hide panel">
+        <button id="transfer-panel-hide" class="btn-icon hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Hide panel">
           <span class="material-icons-outlined text-base">close</span>
         </button>
       </div>
@@ -504,13 +508,13 @@ function renderItem(item) {
         ${item.status === 'cancelled' ? `<p class="text-[10px] text-gray-400 mt-0.5">Cancelled</p>` : ''}
       </div>
       <div class="flex items-center gap-0.5 shrink-0">
-        ${isDownloading ? `<button class="btn-pause-transfer p-1 rounded-full hover:bg-yellow-50 dark:hover:bg-yellow-900/20 text-yellow-500 transition-colors" data-id="${item.id}" title="Pause">
+        ${isDownloading ? `<button class="btn-pause-transfer btn-icon hover:bg-yellow-50 dark:hover:bg-yellow-900/20 text-yellow-500 transition-colors" data-id="${item.id}" title="Pause">
           <span class="material-icons-outlined text-sm">pause</span>
         </button>` : ''}
-        ${isPaused ? `<button class="btn-resume-transfer p-1 rounded-full hover:bg-green-50 dark:hover:bg-green-900/20 text-green-500 transition-colors" data-id="${item.id}" title="Resume">
+        ${isPaused ? `<button class="btn-resume-transfer btn-icon hover:bg-green-50 dark:hover:bg-green-900/20 text-green-500 transition-colors" data-id="${item.id}" title="Resume">
           <span class="material-icons-outlined text-sm">play_arrow</span>
         </button>` : ''}
-        ${isActive || isPaused ? `<button class="btn-cancel-transfer p-1 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" data-id="${item.id}" title="Cancel">
+        ${isActive || isPaused ? `<button class="btn-cancel-transfer btn-icon hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors" data-id="${item.id}" title="Cancel">
           <span class="material-icons-outlined text-sm">close</span>
         </button>` : ''}
       </div>
