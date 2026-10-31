@@ -123,19 +123,12 @@ export function renderTrashPage() {
     icon.classList.add('animate-spin');
 
     try {
-      const files = await api('/api/files/trash/list');
-      let count = 0;
-      for (const file of files) {
-        try {
-          await api(`/api/files/${file.id}/permanent-delete`, {
-            method: 'POST',
-            body: JSON.stringify({ accountId: file.accountId })
-          });
-          count++;
-        } catch (e) {}
+      const result = await api('/api/files/trash/empty', { method: 'POST' });
+      if (result.queued) {
+        showToast('Empty trash queued — track it in Progress', 'info');
+        sessionStorage.removeItem(TRASH_CACHE_KEY);
+        renderTrashFiles([]);
       }
-      showToast(`Permanently deleted ${count} file(s)`, 'success');
-      loadTrash();
     } catch (err) {
       showToast(err.message, 'error');
     } finally {

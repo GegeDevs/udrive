@@ -201,6 +201,53 @@ registerJobHandler('delete-items', async ({ db, env, payload, progress, isCancel
   return { deletedFiles, deletedFolders, failed: errors.length, errors };
 });
 
+// Empty every account's trash. Listing and deleting both run in parallel;
+// permanent deletes are single API calls, so batching them is the whole win.
+registerJobHandler('empty-trash', async ({ db, env, progress, isCancelled }) => {
+  const { results: accounts } = await db.prepare('SELECT id, email FROM accounts').all();
+  const limit = Math.max(5, await getConcurrencyLimit(db));
+
+  await progress({ message: 'Scanning trash…', done: 0, total: 0 });
+
+  const listings = await mapWithConcurrency(accounts, Math.max(8, limit), async (acc) => {
+    try {
+      return { acc, trashed: await drive.listTrash(env, db, acc.id) };
+    } catch {
+      return { acc, trashed: [] };
+    }
+  });
+
+  const items = listings.flatMap(({ acc, trashed }) => trashed.map(f => ({ ...f, accountId: acc.id })));
+  if (isCancelled()) throw new JobCancelled();
+
+  const total = items.length;
+  await progress({ total, done: 0, message: `Deleting ${total} item(s)…` });
+
+  let deleted = 0;
+  let failed = 0;
+  const errors = [];
+
+  await mapWithConcurrency(items, limit, async (item) => {
+    if (isCancelled()) return;
+    try {
+      await drive.permanentDeleteFile(env, db, item.accountId, item.id);
+      deleted++;
+    } catch (err) {
+      failed++;
+      errors.push({ id: item.id, name: item.name, error: err.message });
+    }
+    await progress({
+      done: deleted + failed,
+      total,
+      failed,
+      message: `Deleted ${deleted} of ${total}${failed ? ` · ${failed} failed` : ''}`
+    });
+  });
+
+  clearSearchCache();
+  return { deleted, failed, total, errors };
+});
+
 files.get('/dlink/:token', async (c) => {
   const db = c.get("db");
   const token = c.req.param('token');
@@ -722,6 +769,25 @@ files.post('/:fileId/copy', async (c) => {
   const result = await drive.copyFile(c.env, db, accountId, fileId, destinationId);
   await logActivity(db, user.id, user.username, 'copy', fileId);
   return c.json(result);
+});
+
+files.post('/trash/empty', async (c) => {
+  const user = c.get('user');
+  let err = requireAuth(c, user);
+  if (err) return err;
+  err = requirePermission(c, user, 'trash:empty');
+  if (err) return err;
+
+  const db = c.get('db');
+  const jobId = await enqueueJob(db, {
+    type: 'empty-trash',
+    label: 'Empty trash (all accounts)',
+    payload: {},
+    userId: user.id
+  });
+
+  await logActivity(db, user.id, user.username, 'permanent_delete', 'Empty trash (queued)');
+  return c.json({ success: true, queued: true, jobId });
 });
 
 files.post('/:fileId/restore', async (c) => {
