@@ -219,7 +219,7 @@ Available API permissions:
 - **Primary Account** owns the shared folder and is used for listing/reading files.
 - **Non-primary Accounts** are used for uploads, so quota is charged to the uploader account.
 - **Delete** uses the file's owner account, auto-detected via Drive API if not tracked locally.
-- **Folder Delete** runs synchronously with safety limits. Very large folders should be deleted in smaller subfolders.
+- **Folder Delete** runs synchronously; large folders can take a while but are no longer capped.
 - **Transfer Ownership** copies a file to the target account, deletes the original, and updates local ownership mapping.
 - **Storage** is tracked per account and displayed in progress bars and donut charts.
 - **File Share** uploads go to the account with most available space from the allowed account list.

@@ -77,7 +77,7 @@ Production: access via `localhost:3000`.
 - Docker/native Node.js is the only supported runtime.
 - DB abstraction: `src/db/local.js` wraps better-sqlite3 with an async API so route code can consistently use `prepare().bind().first/all/run()`.
 - All routes use `c.get('db')` for database and `c.env` for Google/Turnstile credentials.
-- `createApp(getDB, envVars)` keeps env injection explicit for the Node entrypoint.
+- `createApp(db, envVars)` wires the Node DB instance and env into request context.
 - Google Drive API uses direct REST fetch, not googleapis.
 - Cloudflare Turnstile is optional bot protection for sharing, not a deployment target.
 - TailwindCSS v4 dark mode: `@custom-variant dark (&:where(.dark, .dark *))` for class-based toggle.
@@ -134,4 +134,4 @@ Multi-stage Dockerfile. Volume at `/app/data/` for DB persistence. Reads `.env` 
 
 ## Large Folder Deletion
 
-Folder deletion is synchronous in Docker/native mode and has safety limits to avoid long-running HTTP requests. Very large folders should be deleted in smaller subfolders. Do not reintroduce Cloudflare Queue-specific behavior unless the deployment model changes again.
+Folder deletion is synchronous and uncapped. Very large folders can take a while; the request runs until done.

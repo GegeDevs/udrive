@@ -20,36 +20,6 @@ export async function listFiles(env, db, accountId, folderId) {
   return data.files || [];
 }
 
-export async function quickCountFiles(env, db, accountId, folderId, maxPages = 2) {
-  const headers = await getAuthHeaders(env, db, accountId);
-  const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
-  const fields = encodeURIComponent('nextPageToken,files(id)'); // Only ID for fast counting
-
-  let totalCount = 0;
-  let pageToken = null;
-  let pageCount = 0;
-
-  do {
-    if (pageCount >= maxPages) {
-      // Return estimated count with hasMore flag
-      return { count: totalCount, hasMore: true, isEstimate: true };
-    }
-
-    let url = `${DRIVE_API}/files?q=${q}&fields=${fields}&pageSize=1000`;
-    if (pageToken) url += `&pageToken=${pageToken}`;
-
-    const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error(`Quick count failed: ${res.status}`);
-
-    const data = await res.json();
-    totalCount += data.files?.length || 0;
-    pageToken = data.nextPageToken;
-    pageCount++;
-  } while (pageToken);
-
-  return { count: totalCount, hasMore: false, isEstimate: false };
-}
-
 export async function listAllFiles(env, db, accountId, folderId) {
   const headers = await getAuthHeaders(env, db, accountId);
   const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
@@ -57,15 +27,8 @@ export async function listAllFiles(env, db, accountId, folderId) {
 
   const allFiles = [];
   let pageToken = null;
-  let pageCount = 0;
-  const maxPages = 20; // Safety limit: max 20 pages (20,000 files)
 
   do {
-    if (pageCount >= maxPages) {
-      console.warn(`listAllFiles: Reached max pages (${maxPages}) for folder ${folderId}`);
-      break;
-    }
-
     let url = `${DRIVE_API}/files?q=${q}&fields=${fields}&pageSize=1000`;
     if (pageToken) url += `&pageToken=${pageToken}`;
 
@@ -78,7 +41,6 @@ export async function listAllFiles(env, db, accountId, folderId) {
     }
 
     pageToken = data.nextPageToken;
-    pageCount++;
   } while (pageToken);
 
   return allFiles;

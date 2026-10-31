@@ -33,6 +33,14 @@ export function nextWeekdayDelay(days, from = new Date()) {
   return null;
 }
 
+// True when today is a scheduled day and no run happened yet today.
+// `lastRun` is the ISO timestamp stored in settings.last_keepalive.
+export function isRunDueToday(days, lastRun, now = new Date()) {
+  if (!days.includes(WEEKDAYS[now.getDay()])) return false;
+  if (!lastRun) return true;
+  return new Date(lastRun).toDateString() !== now.toDateString();
+}
+
 // Resolve the current schedule from the DB. Disabled when no weekday is set.
 async function getNextRun() {
   const row = await dbRef.prepare(`SELECT value FROM settings WHERE key = '${WEEKDAY_KEY}'`).first();
@@ -40,6 +48,40 @@ async function getNextRun() {
   if (weekdays.length === 0) return { delay: 0, label: 'disabled' };
   const label = weekdays.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(', ');
   return { delay: nextWeekdayDelay(weekdays), label: `on ${label}` };
+}
+
+async function executeRun() {
+  // Resolve OAuth credentials fresh from the DB (settings win over .env)
+  // so changes made in the Settings page apply without a restart
+  const env = await getGoogleOAuthEnv(dbRef);
+  const results = await runKeepAlive(env, dbRef);
+  const ok = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success);
+  console.log(`Keep-alive run completed: ${ok}/${results.length} account(s) OK`);
+  await logSystem(
+    dbRef,
+    failed.length ? 'warn' : 'info',
+    'Keep-alive run completed',
+    `${ok}/${results.length} account(s) OK` +
+      (failed.length ? `; failed: ${failed.map(f => `${f.email}: ${f.error}`).join('; ')}` : '')
+  );
+}
+
+// Run immediately at startup / when the schedule is enabled if today is a
+// scheduled day and this process hasn't run yet today. Without this, a timer
+// created on a scheduled day always targets the *next* occurrence (up to 7
+// days away), and restarts can skip a day entirely.
+async function runIfDueToday() {
+  try {
+    const daysRow = await dbRef.prepare(`SELECT value FROM settings WHERE key = '${WEEKDAY_KEY}'`).first();
+    const days = parseWeekdays(daysRow?.value);
+    const lastRow = await dbRef.prepare("SELECT value FROM settings WHERE key = 'last_keepalive'").first();
+    if (!isRunDueToday(days, lastRow?.value)) return;
+    console.log('Keep-alive scheduler: catch-up run for today');
+    await executeRun();
+  } catch (err) {
+    console.error('Keep-alive catch-up run failed:', err.message);
+  }
 }
 
 async function scheduleNext() {
@@ -60,14 +102,12 @@ async function scheduleNext() {
   timer = setTimeout(async () => {
     timer = null;
     try {
-      // Resolve OAuth credentials fresh from the DB (settings win over .env)
-      // so changes made in the Settings page apply without a restart
-      const env = await getGoogleOAuthEnv(dbRef);
-      const results = await runKeepAlive(env, dbRef);
-      const ok = results.filter(r => r.success).length;
-      console.log(`Keep-alive run completed: ${ok}/${results.length} account(s) OK`);
+      await executeRun();
     } catch (err) {
       console.error('Keep-alive run failed:', err.message);
+      try {
+        await logSystem(dbRef, 'error', 'Keep-alive run failed', err.message);
+      } catch {}
     }
     // Always re-read the schedule from the DB so changes take effect
     // without a server restart.
@@ -75,9 +115,10 @@ async function scheduleNext() {
   }, run.delay);
 }
 
-export function initKeepAliveScheduler(db, env) {
+export async function initKeepAliveScheduler(db, env) {
   dbRef = db;
   envRef = env;
+  await runIfDueToday();
   return scheduleNext();
 }
 
@@ -85,5 +126,6 @@ export async function rescheduleKeepAliveScheduler() {
   if (!dbRef) return; // scheduler not initialized yet (route called outside local.js)
   const run = await getNextRun();
   await logSystem(dbRef, 'info', 'Keep-alive schedule updated', run.label);
+  await runIfDueToday();
   return scheduleNext();
 }
