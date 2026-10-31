@@ -181,4 +181,10 @@ function initMobileNav() {
   window.addEventListener('hashchange', updateMobileNav);
 }
 
+// Installable PWA (works on Chrome desktop & Android; "Add to Home Screen"
+// on iOS Safari). A secure context (HTTPS or localhost) is required.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
 initApp();
