@@ -644,6 +644,31 @@ files.post('/folder', async (c) => {
   return c.json(result);
 });
 
+// Overwrite a text file's content from the preview editor.
+files.put('/:fileId/content', async (c) => {
+  const user = c.get('user');
+  let err = requireAuth(c, user);
+  if (err) return err;
+  err = requirePermission(c, user, 'drive:upload');
+  if (err) return err;
+
+  const db = c.get("db");
+  const fileId = c.req.param('fileId');
+  const accountId = await resolveFileOwnerAccountId(c, db, fileId);
+  if (!accountId) return c.json({ error: 'No primary account set' }, 400);
+
+  const body = await c.req.text();
+  const bytes = Buffer.byteLength(body, 'utf8');
+  if (bytes > 5 * 1024 * 1024) {
+    return c.json({ error: 'File too large to edit (max 5 MB)' }, 413);
+  }
+
+  const info = await drive.getFileInfo(c.env, db, accountId, fileId);
+  await drive.updateFileContent(c.env, db, accountId, fileId, Buffer.from(body, 'utf8'), info.mimeType);
+  await logActivity(db, user.id, user.username, 'edit', info.name || fileId);
+  return c.json({ success: true, size: bytes });
+});
+
 files.patch('/:fileId', async (c) => {
   const user = c.get('user');
   let err = requireAuth(c, user);

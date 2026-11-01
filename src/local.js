@@ -8,6 +8,7 @@ import { createApp } from './app.js';
 import { getDB, initDB } from './db/index.js';
 import { initKeepAliveScheduler } from './services/keep-alive-scheduler.js';
 import { initShareCleanupScheduler } from './services/share-cleanup-scheduler.js';
+import { initAccountsStorageScheduler } from './services/accounts-storage-scheduler.js';
 import { initJobQueue } from './services/job-queue.js';
 import { getAppConfig } from './services/app-config.js';
 
@@ -55,3 +56,7 @@ initKeepAliveScheduler(db, {});
 // every cycle so setting changes apply without restart); OAuth credentials
 // resolved fresh from the DB (settings win over .env) on every run
 initShareCleanupScheduler(db);
+
+// Refresh each account's Drive storage numbers in the background when they are
+// older than 10 minutes, so the Accounts page is not stale.
+initAccountsStorageScheduler(db);

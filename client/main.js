@@ -30,11 +30,12 @@ updateLastDeployTime();
 async function initApp() {
   // Public share routes bypass auth
   const hash = window.location.hash.slice(1) || '/';
-  if (hash === '/share' || hash.startsWith('/share/')) {
+  const isPublicShare = (h) => h === '/share' || h.startsWith('/share/') || h.startsWith('/link/');
+  if (isPublicShare(hash)) {
     renderSharePublicPage();
     window.addEventListener('hashchange', () => {
       const h = window.location.hash.slice(1) || '/';
-      if (h === '/share' || h.startsWith('/share/')) {
+      if (isPublicShare(h)) {
         renderSharePublicPage();
       } else {
         window.location.reload();

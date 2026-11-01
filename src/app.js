@@ -13,6 +13,7 @@ import apiKeysRoutes from './routes/api-keys.js';
 import jobsRoutes from './routes/jobs.js';
 import webdavRoutes from './routes/webdav.js';
 import { sharePublic, shareAdmin } from './routes/share.js';
+import { shareLinkPublic, shareLinkAdmin } from './routes/share-links.js';
 
 export function createApp(db, envVars = null) {
   const app = new Hono();
@@ -46,8 +47,10 @@ export function createApp(db, envVars = null) {
 
   // Routes
   app.route('/share', sharePublic);
+  app.route('/link', shareLinkPublic);
   app.route('/auth', authRoutes);
   app.route('/api/share', shareAdmin);
+  app.route('/api/share-links', shareLinkAdmin);
   app.route('/api/users', userRoutes);
   app.route('/api/accounts', accountRoutes);
   app.route('/api/files', fileRoutes);

@@ -118,6 +118,26 @@ export async function initDB(db) {
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS share_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      token TEXT NOT NULL UNIQUE,
+      resource_type TEXT NOT NULL,
+      account_id INTEGER NOT NULL,
+      drive_file_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      mime_type TEXT,
+      size INTEGER,
+      permissions TEXT NOT NULL,
+      password_hash TEXT,
+      expires_at TEXT,
+      created_by INTEGER,
+      access_count INTEGER DEFAULT 0,
+      last_accessed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_share_links_token ON share_links (token);
+
     CREATE TABLE IF NOT EXISTS jobs (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,

@@ -102,6 +102,9 @@ export function renderFileSharePage() {
           <button class="tab-btn pb-2 px-1 text-sm font-medium border-b-2 transition-colors" data-tab="shares">
             Active Shares
           </button>
+          <button class="tab-btn pb-2 px-1 text-sm font-medium border-b-2 transition-colors" data-tab="links">
+            Share Links
+          </button>
           <button class="tab-btn pb-2 px-1 text-sm font-medium border-b-2 transition-colors" data-tab="accounts">
             Accounts
           </button>
@@ -127,6 +130,9 @@ export function renderFileSharePage() {
   const tabContent = main.querySelector('#share-tab-content');
   if (activeTab === 'shares') {
     renderSharesTab(tabContent);
+  } else if (activeTab === 'links') {
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    renderLinksTab(tabContent);
   } else if (activeTab === 'accounts') {
     if (eventSource) { eventSource.close(); eventSource = null; }
     renderAccountsTab(tabContent);
@@ -576,6 +582,115 @@ async function renderSettingsTab(container) {
   } catch (err) {
     container.innerHTML = `<p class="text-red-500 text-sm">${err.message}</p>`;
   }
+}
+
+async function renderLinksTab(container) {
+  container.innerHTML = `<p class="text-sm text-gray-500">Loading...</p>`;
+  try {
+    const data = await api('/api/share-links');
+    const canManage = hasPermission('share:manage');
+
+    if (data.links.length === 0) {
+      container.innerHTML = `
+        <div class="text-center py-12">
+          <span class="material-icons-outlined text-gray-400 text-4xl">link_off</span>
+          <p class="mt-3 text-gray-500 dark:text-gray-400">No share links</p>
+          <p class="mt-1 text-xs text-gray-400">Create them from the file manager: right-click a file or folder and choose "Share link".</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="flex items-center justify-between mb-3">
+        <p class="text-sm text-gray-500">${data.links.length} link${data.links.length !== 1 ? 's' : ''}</p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-700 text-left">
+              <th class="pb-2 font-medium text-gray-500">Name</th>
+              <th class="pb-2 font-medium text-gray-500 hidden md:table-cell">Permissions</th>
+              <th class="pb-2 font-medium text-gray-500 hidden md:table-cell">Expires</th>
+              <th class="pb-2 font-medium text-gray-500">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="links-tbody"></tbody>
+        </table>
+      </div>`;
+
+    const tbody = container.querySelector('#links-tbody');
+    for (const link of data.links) {
+      const tr = createLinkRow(link, canManage);
+      tbody.appendChild(tr);
+    }
+
+    container.querySelectorAll('.link-revoke-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Revoke this share link?')) return;
+        btn.disabled = true;
+        try {
+          await api(`/api/share-links/${btn.dataset.id}`, { method: 'DELETE' });
+          btn.closest('tr')?.remove();
+        } catch (err) {
+          btn.disabled = false;
+          alert(err.message);
+        }
+      });
+    });
+  } catch (err) {
+    container.innerHTML = `<p class="text-red-500 text-sm">${err.message}</p>`;
+  }
+}
+
+function createLinkRow(link, canManage) {
+  const isFolder = link.resourceType === 'folder';
+  const isExpired = link.expiresAt && parseDbDate(link.expiresAt) < new Date();
+  const url = `${window.location.origin}/#/link/${link.token}`;
+
+  const tr = document.createElement('tr');
+  tr.className = 'border-b border-gray-100 dark:border-gray-800';
+  tr.innerHTML = `
+    <td class="py-2.5 pr-3">
+      <div class="flex items-center gap-2">
+        <span class="material-icons-outlined text-base text-gray-400">${isFolder ? 'folder' : 'description'}</span>
+        ${link.hasPassword ? '<span class="material-icons-outlined text-xs text-amber-500" title="Password protected">lock</span>' : ''}
+        <span class="truncate max-w-[200px]" title="${escapeHtml(link.name)}">${escapeHtml(link.name)}</span>
+      </div>
+    </td>
+    <td class="py-2.5 pr-3 hidden md:table-cell">
+      <div class="flex flex-wrap gap-1">
+        ${link.permissions.map(p => `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">${p}</span>`).join('')}
+      </div>
+    </td>
+    <td class="py-2.5 pr-3 hidden md:table-cell ${isExpired ? 'text-red-500' : 'text-gray-500'}">${link.expiresAt ? formatDateTime(link.expiresAt) : 'Never'}</td>
+    <td class="py-2.5">
+      <div class="flex items-center gap-1">
+        <a href="${url}" target="_blank" rel="noopener" class="btn-icon hover:bg-gray-100 dark:hover:bg-gray-800" title="Open">
+          <span class="material-icons-outlined text-sm">open_in_new</span>
+        </a>
+        <button class="link-copy-btn btn-icon hover:bg-gray-100 dark:hover:bg-gray-800" title="Copy link">
+          <span class="material-icons-outlined text-sm">content_copy</span>
+        </button>
+        ${canManage ? `<button class="link-revoke-btn btn-icon hover:bg-gray-100 dark:hover:bg-gray-800 text-red-500" data-id="${link.id}" title="Revoke">
+          <span class="material-icons-outlined text-sm">delete</span>
+        </button>` : ''}
+      </div>
+    </td>`;
+
+  tr.querySelector('.link-copy-btn').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const input = document.createElement('input');
+      input.value = url;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      input.remove();
+    }
+  });
+
+  return tr;
 }
 
 function escapeHtml(str) {

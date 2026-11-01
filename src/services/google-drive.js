@@ -74,6 +74,21 @@ export async function uploadFile(env, db, accountId, folderId, fileBuffer, metad
   return res.json();
 }
 
+// Overwrite an existing file's bytes (used by the text editor).
+export async function updateFileContent(env, db, accountId, fileId, fileBuffer, mimeType) {
+  const headers = await getAuthHeaders(env, db, accountId);
+  const res = await fetch(`${UPLOAD_API}/files/${fileId}?uploadType=media&fields=id,name,mimeType,size`, {
+    method: 'PATCH',
+    headers: { ...headers, 'Content-Type': mimeType || 'text/plain' },
+    body: fileBuffer
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(`Update content failed: ${res.status} - ${errBody.error?.message || 'unknown error'}`);
+  }
+  return res.json();
+}
+
 export async function downloadFile(env, db, accountId, fileId) {
   const headers = await getAuthHeaders(env, db, accountId);
   const metaRes = await fetch(`${DRIVE_API}/files/${fileId}?fields=name,mimeType,size`, { headers });

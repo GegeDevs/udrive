@@ -24,6 +24,7 @@ export default defineConfig({
       '/auth/': 'http://localhost:3000',
       '/dlink/': 'http://localhost:3000',
       '/share/': 'http://localhost:3000',
+      '/link/': 'http://localhost:3000',
       '/webdav': 'http://localhost:3000'
     }
   },

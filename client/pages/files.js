@@ -1,4 +1,4 @@
-import { api } from '../api.js';
+import { api, uploadFile } from '../api.js';
 import { getQueryParams } from '../router.js';
 import { renderBreadcrumb } from '../components/breadcrumb.js';
 import { showContextMenu, hideContextMenu } from '../components/context-menu.js';
@@ -8,6 +8,7 @@ import { addToUploadQueue, onUploadComplete, downloadBackground, downloadViaBrow
 import { renderSidebar } from '../components/sidebar.js';
 import { hasPermission } from '../auth-state.js';
 import { formatDateTime } from '../time-utils.js';
+import { escapeHtml, isTextType, isPreviewable, beautyKind, highlightCode, renderCsv, prettyJson, highlightJson, renderMarkdown } from '../lib/beautify.js';
 
 let folderStack = [];
 let currentFiles = [];
@@ -16,6 +17,7 @@ let searchActive = false;
 const searchFolderTrail = new Map();
 let selectedFiles = new Set();
 let viewMode = localStorage.getItem('udrive-view-mode') || 'list';
+let tabSize = Number(localStorage.getItem('udrive-tab-size')) || 4;
 
 let clipboard = {
   files: [],
@@ -107,27 +109,8 @@ function loadFolderStack() {
   }
 }
 
-function isPreviewable(mimeType) {
-  if (!mimeType) return false;
-  if (mimeType.startsWith('image/')) return true;
-  if (mimeType.startsWith('video/')) return true;
-  if (mimeType.startsWith('text/')) return true;
-  if (mimeType === 'application/json') return true;
-  if (mimeType === 'application/javascript') return true;
-  if (mimeType === 'application/xml') return true;
-  if (mimeType === 'application/pdf') return true;
-  return false;
-}
 
-function isTextType(mimeType) {
-  if (mimeType.startsWith('text/')) return true;
-  if (mimeType === 'application/json') return true;
-  if (mimeType === 'application/javascript') return true;
-  if (mimeType === 'application/xml') return true;
-  return false;
-}
-
-function openPreview(fileId, name, mimeType) {
+function openPreview(fileId, name, mimeType, startInEdit = false) {
   const existing = document.getElementById('preview-modal');
   if (existing) existing.remove();
 
@@ -135,18 +118,36 @@ function openPreview(fileId, name, mimeType) {
   modal.id = 'preview-modal';
   modal.className = 'fixed inset-0 z-50 bg-black/80';
 
+  const text = isTextType(mimeType, name);
+  const beauty = text ? beautyKind(mimeType, name) : null;
+  const canEdit = text && hasPermission('drive:upload');
+  const isImage = mimeType.startsWith('image/');
+  const imageList = currentFiles.filter((f) => f.mimeType?.startsWith('image/'));
+  let imageIndex = imageList.findIndex((f) => f.id === fileId);
+  let editing = canEdit && startInEdit;
   let contentHtml = '';
 
   if (mimeType.startsWith('image/')) {
-    contentHtml = `<img src="/api/files/${fileId}/preview" alt="${escapeAttr(name)}" class="w-full h-full object-contain">`;
+    contentHtml = `
+      <div id="preview-image-wrap" class="w-full h-full flex items-center justify-center relative">
+        <div id="preview-image-loading" class="absolute inset-0 flex items-center justify-center bg-black/80 hidden z-10">
+          <div class="flex flex-col items-center gap-2">
+            <div class="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+            <span class="text-xs text-white">Loading…</span>
+          </div>
+        </div>
+        <img id="preview-image" src="/api/files/${fileId}/preview" alt="${escapeAttr(name)}" class="w-full h-full object-contain">
+      </div>`;
   } else if (mimeType.startsWith('video/')) {
     contentHtml = `<video src="/api/files/${fileId}/preview" controls preload="metadata" class="w-full h-full object-contain"></video>`;
   } else if (mimeType === 'application/pdf') {
     contentHtml = `<iframe src="/api/files/${fileId}/preview" title="${escapeAttr(name)}" class="w-full h-full border-0 bg-white"></iframe>`;
-  } else if (isTextType(mimeType)) {
+  } else if (text) {
     contentHtml = `
-      <div class="bg-white dark:bg-gray-800 w-full h-full flex flex-col">
-        <pre id="text-preview-content" class="flex-1 overflow-auto p-4 text-sm font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">Loading...</pre>
+      <div class="bg-white dark:bg-gray-800 w-full h-full relative">
+        <textarea id="text-preview-content" spellcheck="false" placeholder="Loading…"
+          class="w-full h-full resize-none overflow-auto p-4 text-sm font-mono leading-relaxed text-gray-800 dark:text-gray-200 bg-transparent focus:outline-none"></textarea>
+        <div id="text-preview-rendered" class="hidden absolute inset-0 overflow-auto px-6 py-5 md-body"></div>
       </div>
     `;
   }
@@ -154,10 +155,31 @@ function openPreview(fileId, name, mimeType) {
   modal.innerHTML = `
     <div class="absolute inset-0 flex flex-col">
       <div class="flex items-center justify-between gap-2 px-3 py-1.5 bg-black/80 text-white shrink-0">
-        <p class="truncate text-xs font-medium">${escapeHtml(name)}</p>
-        <button id="preview-close" class="btn-icon hover:bg-white/10 text-white transition-colors shrink-0">
-          <span class="material-icons-outlined text-lg">close</span>
-        </button>
+        <p class="truncate text-xs font-medium"><span id="preview-name">${escapeHtml(name)}</span><span id="preview-dirty" class="hidden text-amber-300 ml-2" title="Unsaved changes">●</span></p>
+        <div class="flex items-center gap-1 shrink-0">
+          ${isImage && imageList.length > 1 ? `<button id="preview-prev" class="btn-icon hover:bg-white/10 text-white transition-colors" title="Previous image" ${imageIndex <= 0 ? 'disabled' : ''}>
+            <span class="material-icons-outlined text-lg">chevron_left</span>
+          </button>` : ''}
+          ${isImage && imageList.length > 1 ? `<button id="preview-next" class="btn-icon hover:bg-white/10 text-white transition-colors" title="Next image" ${imageIndex < 0 || imageIndex >= imageList.length - 1 ? 'disabled' : ''}>
+            <span class="material-icons-outlined text-lg">chevron_right</span>
+          </button>` : ''}
+          ${beauty ? `<button id="preview-format" class="btn-icon hover:bg-white/10 text-white transition-colors" title="Plain text">
+            <span class="material-icons-outlined text-lg">code</span>
+          </button>` : ''}
+          ${canEdit ? `<button id="preview-toggle" class="btn-icon hover:bg-white/10 text-white transition-colors" title="Edit mode">
+            <span class="material-icons-outlined text-lg">edit</span>
+          </button>` : ''}
+          ${canEdit ? `<select id="preview-tab-size" title="Tab size" aria-label="Tab size"
+            class="hidden bg-transparent text-white text-xs border border-white/20 rounded px-1 py-0.5 focus:outline-none">
+            ${[2, 4, 8].map((n) => `<option value="${n}" class="text-gray-900">${n}</option>`).join('')}
+          </select>` : ''}
+          ${canEdit ? `<button id="preview-save" class="btn-icon hover:bg-white/10 text-white transition-colors hidden" title="Save (Ctrl+S)" disabled>
+            <span class="material-icons-outlined text-lg">save</span>
+          </button>` : ''}
+          <button id="preview-close" class="btn-icon hover:bg-white/10 text-white transition-colors" title="Close">
+            <span class="material-icons-outlined text-lg">close</span>
+          </button>
+        </div>
       </div>
       <div class="preview-content relative flex-1 min-h-0" onclick="event.stopPropagation()">
         ${contentHtml}
@@ -167,34 +189,200 @@ function openPreview(fileId, name, mimeType) {
 
   document.body.appendChild(modal);
 
+  let dirty = false;
+  const setDirty = (value) => {
+    dirty = value;
+    modal.querySelector('#preview-dirty')?.classList.toggle('hidden', !value);
+    const btn = modal.querySelector('#preview-save');
+    if (btn) {
+      btn.disabled = !value;
+      btn.classList.toggle('hidden', !editing && !value);
+    }
+  };
+
+  const showImage = (newFileId) => {
+    const item = imageList.find((f) => f.id === newFileId);
+    if (!item) return;
+    imageIndex = imageList.findIndex((f) => f.id === newFileId);
+    const img = modal.querySelector('#preview-image');
+    const loading = modal.querySelector('#preview-image-loading');
+    if (img) {
+      img.src = `/api/files/${newFileId}/preview?t=${Date.now()}`;
+      img.alt = escapeAttr(item.name);
+      img.style.opacity = '0.4';
+      if (loading) loading.classList.remove('hidden');
+      img.onload = () => {
+        img.style.opacity = '1';
+        if (loading) loading.classList.add('hidden');
+      };
+      img.onerror = () => {
+        img.style.opacity = '1';
+        if (loading) loading.classList.add('hidden');
+      };
+    }
+    const nameSpan = document.getElementById('preview-name');
+    if (nameSpan) nameSpan.textContent = item.name;
+    const prevBtn = document.getElementById('preview-prev');
+    const nextBtn = document.getElementById('preview-next');
+    if (prevBtn) prevBtn.disabled = imageIndex <= 0;
+    if (nextBtn) nextBtn.disabled = imageIndex < 0 || imageIndex >= imageList.length - 1;
+  };
+
+  const closeModal = () => {
+    if (dirty && !confirm('Discard unsaved changes?')) return;
+    modal.remove();
+  };
+
   modal.querySelector('#preview-close').addEventListener('click', (e) => {
     e.stopPropagation();
-    modal.remove();
+    closeModal();
   });
   modal.addEventListener('click', (e) => {
-    if (e.target === modal) modal.remove();
+    if (e.target === modal) closeModal();
+  });
+  document.getElementById('preview-prev')?.addEventListener('click', () => {
+    if (imageIndex > 0) showImage(imageList[imageIndex - 1].id);
+  });
+  document.getElementById('preview-next')?.addEventListener('click', () => {
+    if (imageIndex >= 0 && imageIndex < imageList.length - 1) showImage(imageList[imageIndex + 1].id);
   });
   document.addEventListener('keydown', function handler(e) {
-    if (e.key === 'Escape') {
-      modal.remove();
-      document.removeEventListener('keydown', handler);
+    if (e.key === 'Escape' && document.getElementById('preview-modal')) {
+      closeModal();
+      if (!document.getElementById('preview-modal')) document.removeEventListener('keydown', handler);
+    } else if (isImage && imageList.length > 1 && imageIndex >= 0) {
+      if (e.key === 'ArrowLeft' && imageIndex > 0) {
+        e.preventDefault();
+        showImage(imageList[imageIndex - 1].id);
+      } else if (e.key === 'ArrowRight' && imageIndex < imageList.length - 1) {
+        e.preventDefault();
+        showImage(imageList[imageIndex + 1].id);
+      }
     }
   });
 
-  if (isTextType(mimeType)) {
+  if (text) {
+    const area = modal.querySelector('#text-preview-content');
+    const rendered = modal.querySelector('#text-preview-rendered');
+    const toggle = modal.querySelector('#preview-toggle');
+    const formatBtn = modal.querySelector('#preview-format');
+    const tabSel = modal.querySelector('#preview-tab-size');
+    const saveBtn = modal.querySelector('#preview-save');
+    let beautified = !!beauty;
+
+    const paint = () => {
+      if (!beautified) { rendered.innerHTML = ''; return; }
+      if (beauty === 'markdown') rendered.innerHTML = renderMarkdown(area.value);
+      else if (beauty === 'csv') rendered.innerHTML = renderCsv(area.value, /\.tsv$/i.test(name) ? '\t' : ',');
+      else if (beauty === 'code') rendered.innerHTML = `<pre class="p-4 text-[13px] font-mono leading-relaxed whitespace-pre-wrap break-words">${highlightCode(area.value)}</pre>`;
+      else rendered.innerHTML = `<pre class="p-4 text-sm font-mono whitespace-pre-wrap break-words">${highlightJson(area.value)}</pre>`;
+    };
+
+    const applyMode = () => {
+      const showRendered = beautified && !editing;
+      area.readOnly = !editing;
+      area.classList.toggle('hidden', showRendered);
+      rendered.classList.toggle('hidden', !showRendered);
+      if (toggle) {
+        toggle.title = editing ? 'Preview mode' : 'Edit mode';
+        toggle.querySelector('span').textContent = editing ? 'visibility' : 'edit';
+      }
+      if (formatBtn) {
+        formatBtn.title = beautified ? 'Plain text' : 'Beautified view';
+        formatBtn.querySelector('span').textContent = beautified ? 'code' : 'notes';
+      }
+      if (tabSel) {
+        tabSel.classList.toggle('hidden', !editing);
+        tabSel.value = String(tabSize);
+      }
+      // Save stays reachable while there are unsaved changes, even in preview.
+      if (saveBtn) saveBtn.classList.toggle('hidden', !editing && !dirty);
+    };
+
+    area.readOnly = true;
+
     fetch(`/api/files/${fileId}/preview`)
       .then(res => {
         if (!res.ok) throw new Error('Failed to load file');
         return res.text();
       })
-      .then(text => {
-        const el = document.getElementById('text-preview-content');
-        if (el) el.textContent = text;
+      .then(content => {
+        area.value = content;
+        area.placeholder = '';
+        paint();
+        applyMode();
+        if (editing) area.focus();
       })
       .catch(err => {
-        const el = document.getElementById('text-preview-content');
-        if (el) el.textContent = `Error: ${err.message}`;
+        area.value = `Error: ${err.message}`;
       });
+
+    area.addEventListener('input', () => setDirty(true));
+
+    // Tab indents inside the editor instead of moving focus; Shift+Tab outdents.
+    area.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab' || area.readOnly) return;
+      e.preventDefault();
+      const indent = ' '.repeat(tabSize);
+      const start = area.selectionStart;
+      const end = area.selectionEnd;
+      const lineStart = area.value.lastIndexOf('\n', start - 1) + 1;
+
+      if (e.shiftKey) {
+        const chunk = area.value.slice(lineStart, end).replace(new RegExp(`^ {1,${tabSize}}`, 'gm'), '');
+        area.setRangeText(chunk, lineStart, end, 'select');
+      } else if (start === end) {
+        area.setRangeText(indent, start, end, 'end');
+      } else {
+        const chunk = area.value.slice(lineStart, end).replace(/^/gm, indent);
+        area.setRangeText(chunk, lineStart, end, 'select');
+      }
+      setDirty(true);
+    });
+
+    tabSel?.addEventListener('change', () => {
+      tabSize = Number(tabSel.value) || 4;
+      localStorage.setItem('udrive-tab-size', String(tabSize));
+    });
+
+    formatBtn?.addEventListener('click', () => {
+      beautified = !beautified;
+      paint();
+      applyMode();
+    });
+
+    toggle?.addEventListener('click', () => {
+      editing = !editing;
+      applyMode();
+      if (editing) area.focus();
+    });
+
+    const save = async () => {
+      const btn = modal.querySelector('#preview-save');
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      try {
+        await api(`/api/files/${fileId}/content`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: area.value
+        });
+        setDirty(false);
+        paint();
+        showToast('File saved', 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false;
+      }
+    };
+
+    modal.querySelector('#preview-save')?.addEventListener('click', save);
+    area.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        save();
+      }
+    });
   }
 }
 
@@ -274,6 +462,15 @@ function updateSelectionUI() {
     } else {
       bulkBar.classList.add('hidden');
     }
+  }
+}
+
+// Go one level up: previous folder in the stack, or the drive root.
+function goUpFolder() {
+  if (folderStack.length > 1) {
+    window.location.hash = `/?folderId=${folderStack[folderStack.length - 2].id}`;
+  } else {
+    window.location.hash = '/';
   }
 }
 
@@ -538,9 +735,9 @@ function bindFileEvents(container) {
         navigateToFolder(id, name);
       } else if (mime === 'application/vnd.google-apps.shortcut' && targetMime === 'application/vnd.google-apps.folder') {
         navigateToFolder(targetId, name);
-      } else if (mime === 'application/vnd.google-apps.shortcut' && targetMime && isPreviewable(targetMime)) {
+      } else if (mime === 'application/vnd.google-apps.shortcut' && targetMime && isPreviewable(targetMime, name)) {
         openPreview(targetId, name, targetMime);
-      } else if (isPreviewable(mime)) {
+      } else if (isPreviewable(mime, name)) {
         openPreview(id, name, mime);
       }
     });
@@ -621,7 +818,7 @@ function showFileContextMenu(x, y, dataset) {
       navigateToFolder(dataset.id, dataset.name);
     }});
   } else {
-    if (isPreviewable(dataset.mime) && hasPermission('drive:preview')) {
+    if (isPreviewable(dataset.mime, dataset.name) && hasPermission('drive:preview')) {
       items.push({ icon: 'visibility', label: 'Preview', action: 'preview', handler: () => openPreview(dataset.id, dataset.name, dataset.mime) });
     }
     if (hasPermission('drive:download_browser')) {
@@ -630,6 +827,10 @@ function showFileContextMenu(x, y, dataset) {
     if (hasPermission('drive:download_background')) {
       items.push({ icon: 'downloading', label: 'Download (Background)', action: 'download-bg', handler: () => downloadBackground(dataset.id, dataset.name) });
     }
+  }
+
+  if (hasPermission('share:manage')) {
+    items.push({ icon: 'link', label: 'Share link', action: 'share', handler: () => showShareLinkModal(dataset.id, dataset.name, dataset.mime) });
   }
 
   items.push({ icon: 'info', label: 'Info', action: 'info', handler: () => showFileInfo(dataset.id) });
@@ -668,6 +869,59 @@ function showFileContextMenu(x, y, dataset) {
     items.push({ divider: true });
     items.push({ icon: 'delete', label: 'Delete', action: 'delete', handler: () => deleteAction(dataset.id, dataset.name) });
   }
+
+  showContextMenu(x, y, items);
+}
+
+async function createFolderAction(parentId) {
+  const name = prompt('Folder name:');
+  if (!name) return;
+
+  try {
+    await api('/api/files/folder', { method: 'POST', body: JSON.stringify({ name, parentId }) });
+    showToast('Folder created', 'success');
+    loadFiles(parentId);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// Create an empty text file, then open it straight in edit mode.
+async function createTextFileAction(parentId) {
+  const input = prompt('File name:', 'untitled.txt');
+  if (!input || !input.trim()) return;
+  const name = /\.[a-z0-9]{1,10}$/i.test(input.trim()) ? input.trim() : `${input.trim()}.txt`;
+
+  try {
+    const created = await uploadFile(new File([''], name, { type: 'text/plain' }), parentId);
+    showToast('File created', 'success');
+    await loadFiles(parentId);
+    openPreview(created.id, created.name || name, created.mimeType || 'text/plain', true);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// Right-click on empty space: actions that apply to the current folder.
+function showEmptyAreaContextMenu(x, y, folderId) {
+  const items = [];
+
+  if (hasPermission('drive:create_folder')) {
+    items.push({ icon: 'create_new_folder', label: 'New Folder', action: 'new-folder', handler: () => createFolderAction(folderId) });
+  }
+  if (hasPermission('drive:upload')) {
+    items.push({ icon: 'upload', label: 'Upload Files', action: 'upload', handler: () => document.getElementById('file-input')?.click() });
+    items.push({ icon: 'note_add', label: 'New Text File', action: 'new-text-file', handler: () => createTextFileAction(folderId) });
+  }
+  if (clipboard.files.length > 0) {
+    items.push({ icon: 'content_paste', label: 'Paste', action: 'paste', handler: () => pasteFiles() });
+  }
+
+  if (items.length) items.push({ divider: true });
+  if (currentFiles.length > 0) {
+    items.push({ icon: 'select_all', label: 'Select All', action: 'select-all', handler: () => selectAll() });
+  }
+  items.push({ icon: 'refresh', label: 'Refresh', action: 'refresh', handler: () => loadFiles(folderId) });
 
   showContextMenu(x, y, items);
 }
@@ -1092,18 +1346,7 @@ export function renderFilesPage() {
     e.target.value = '';
   });
 
-  main.querySelector('#btn-new-folder')?.addEventListener('click', async () => {
-    const name = prompt('Folder name:');
-    if (!name) return;
-
-    try {
-      await api('/api/files/folder', { method: 'POST', body: JSON.stringify({ name, parentId: folderId }) });
-      showToast('Folder created', 'success');
-      loadFiles(folderId);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
+  main.querySelector('#btn-new-folder')?.addEventListener('click', () => createFolderAction(folderId));
 
   main.querySelector('#bulk-delete')?.addEventListener('click', bulkDelete);
   main.querySelector('#bulk-download')?.addEventListener('click', bulkDownload);
@@ -1136,12 +1379,25 @@ export function renderFilesPage() {
     } else if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
       e.preventDefault();
       selectAll();
+    } else if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !document.getElementById('preview-modal')) {
+      e.preventDefault();
+      goUpFolder();
+    } else if (e.key === 'Delete' && selectedFiles.size > 0 && !e.ctrlKey && !e.metaKey && !document.getElementById('preview-modal')) {
+      if (!hasPermission('drive:delete')) return;
+      e.preventDefault();
+      bulkDelete();
     }
   }
   document.addEventListener('keydown', keyHandler);
 
   // Drag and drop
   const dropZone = main.querySelector('.file-list-container');
+  dropZone.addEventListener('contextmenu', (e) => {
+    // Row right-clicks already open the file menu; only handle empty space.
+    if (e.target.closest('.file-item')) return;
+    e.preventDefault();
+    showEmptyAreaContextMenu(e.clientX, e.clientY, folderId);
+  });
   dropZone.addEventListener('dragover', (e) => {
     e.preventDefault();
     dropZone.classList.add('ring-2', 'ring-blue-400', 'ring-inset');
@@ -1177,12 +1433,115 @@ export function renderFilesPage() {
   };
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 function escapeAttr(str) {
   return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function showShareLinkModal(fileId, name, mimeType) {
+  document.getElementById('share-link-modal')?.remove();
+  const isFolder = mimeType === 'application/vnd.google-apps.folder';
+
+  const modal = document.createElement('div');
+  modal.id = 'share-link-modal';
+  modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold">Share link</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">${escapeHtml(name)}</p>
+        </div>
+        <button id="share-link-close" class="btn-icon text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+          <span class="material-icons-outlined text-xl">close</span>
+        </button>
+      </div>
+      <div id="share-link-body" class="p-4 space-y-4">
+        <div>
+          <p class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Permissions</p>
+          <label class="flex items-center gap-2 py-1 opacity-60">
+            <input type="checkbox" checked disabled class="rounded"> <span class="text-sm">Read (always on)</span>
+          </label>
+          <label class="flex items-center gap-2 py-1 cursor-pointer">
+            <input type="checkbox" id="share-perm-download" class="rounded"> <span class="text-sm">Download</span>
+          </label>
+          ${isFolder ? `<label class="flex items-center gap-2 py-1 cursor-pointer">
+            <input type="checkbox" id="share-perm-upload" class="rounded"> <span class="text-sm">Upload</span>
+          </label>` : ''}
+          <label class="flex items-center gap-2 py-1 cursor-pointer">
+            <input type="checkbox" id="share-perm-write" class="rounded"> <span class="text-sm">Write (edit text files)</span>
+          </label>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Expires</label>
+          <select id="share-expiry" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm">
+            <option value="1">1 hour</option>
+            <option value="24" selected>1 day</option>
+            <option value="168">7 days</option>
+            <option value="720">30 days</option>
+            <option value="">Never</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Password (optional)</label>
+          <input id="share-password" type="text" placeholder="Leave empty for none" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm">
+        </div>
+        <button id="share-create" class="btn-block w-full">Create link</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+  modal.querySelector('#share-link-close').addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+  modal.querySelector('#share-create').addEventListener('click', async () => {
+    const btn = modal.querySelector('#share-create');
+    const permissions = ['read'];
+    if (modal.querySelector('#share-perm-download')?.checked) permissions.push('download');
+    if (modal.querySelector('#share-perm-upload')?.checked) permissions.push('upload');
+    if (modal.querySelector('#share-perm-write')?.checked) permissions.push('write');
+    const expiresInHours = modal.querySelector('#share-expiry').value || null;
+    const password = modal.querySelector('#share-password').value.trim() || null;
+
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    try {
+      const result = await api('/api/share-links', {
+        method: 'POST',
+        body: JSON.stringify({ fileId, permissions, expiresInHours, password })
+      });
+      const url = `${window.location.origin}${result.url}`;
+      modal.querySelector('#share-link-body').innerHTML = `
+        <div class="space-y-3">
+          <div class="flex items-center gap-2 text-green-600 dark:text-green-400">
+            <span class="material-icons-outlined text-lg">check_circle</span>
+            <span class="text-sm font-medium">Link created</span>
+          </div>
+          <input id="share-link-url" readonly value="${escapeAttr(url)}" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 text-xs font-mono">
+          <div class="flex gap-2">
+            <button id="share-link-copy" class="btn-primary flex-1 text-sm">Copy link</button>
+            <button id="share-link-done" class="btn-secondary flex-1 text-sm">Done</button>
+          </div>
+          ${result.hasPassword ? '<p class="text-xs text-gray-500 dark:text-gray-400">Password set. Share it separately.</p>' : ''}
+          <p class="text-xs text-gray-500 dark:text-gray-400">Permissions: ${result.permissions.join(', ')}${result.expiresAt ? ` · expires ${formatDateTime(result.expiresAt)}` : ' · never expires'}</p>
+        </div>`;
+      modal.querySelector('#share-link-copy').addEventListener('click', async () => {
+        const input = modal.querySelector('#share-link-url');
+        try {
+          await navigator.clipboard.writeText(input.value);
+          showToast('Link copied', 'success');
+        } catch {
+          input.select();
+          document.execCommand('copy');
+          showToast('Link copied', 'success');
+        }
+      });
+      modal.querySelector('#share-link-done').addEventListener('click', close);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Create link';
+      showToast(err.message, 'error');
+    }
+  });
 }

@@ -108,6 +108,7 @@ export function renderAccountsPage() {
   `;
 
   loadAccounts();
+  startAutoRefresh();
 
   main.querySelector('#btn-export-rclone')?.addEventListener('click', showExportSelectModal);
 
@@ -369,6 +370,16 @@ function showExportResultModal(configText) {
     URL.revokeObjectURL(url);
     showToast('Download started', 'success');
   });
+}
+
+// The server refreshes each account's storage every 10 minutes; re-read the
+// list from this page so the numbers stay fresh without a manual refresh.
+let autoRefreshTimer = null;
+function startAutoRefresh() {
+  if (autoRefreshTimer) return;
+  autoRefreshTimer = setInterval(() => {
+    if (document.getElementById('accounts-list')) loadAccounts();
+  }, 60_000);
 }
 
 async function loadAccounts() {
